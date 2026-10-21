@@ -269,7 +269,7 @@ class CleanerApp(ctk.CTk):
         # При закрытии окна останавливаем фоновые операции и завершаем работу.
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
-    # ============================================================== HEADER
+    # ============================================================== ШАПКА
     def _build_header(self):
         header = ctk.CTkFrame(self, fg_color=COLOR_CARD, corner_radius=12)
         header.pack(fill="x", padx=14, pady=(14, 8))
@@ -447,7 +447,7 @@ class CleanerApp(ctk.CTk):
         self._apply_installer_buttons(self.running)
         self._set_running(self.running)
 
-    # ================================================================ TABS
+    # ================================================================ ВКЛАДКИ
     def _build_tabs(self):
         """Создаёт Notebook с четырьмя вкладками."""
         self.tabs = ctk.CTkTabview(self, fg_color=COLOR_CARD, corner_radius=12,
@@ -480,7 +480,7 @@ class CleanerApp(ctk.CTk):
         except Exception:
             pass
 
-    # ========================================================= CLEAN TAB
+    # ================================================= ВКЛАДКА «ОЧИСТКА»
     def _build_clean_tab(self, parent):
         """Вкладка очистки: категории слева, управление справа."""
         parent.grid_columnconfigure(0, weight=0, minsize=380)
@@ -587,7 +587,7 @@ class CleanerApp(ctk.CTk):
         self.progress.set(0)
         self.progress.pack(fill="x", padx=14, pady=(4, 12))
 
-    # ======================================================= INSTALL TAB
+    # ============================================= ВКЛАДКА «УСТАНОВКА»
     def _build_install_tab(self, parent):
         """Вкладка установки программ через winget.
 
@@ -808,7 +808,7 @@ class CleanerApp(ctk.CTk):
             text_color=COLOR_MUTED, anchor="w")
         self.install_status.grid(row=2, column=0, sticky="ew", padx=16, pady=(0, 8))
 
-    # ============================================================ OPTIMIZE TAB
+    # =========================================== ВКЛАДКА «ОПТИМИЗАЦИЯ»
     def _build_optimize_tab(self, parent):
         """Вкладка оптимизации Windows 10/11 (безопасные, обратимые настройки)."""
         parent.grid_columnconfigure(0, weight=0, minsize=400)
@@ -1017,7 +1017,7 @@ class CleanerApp(ctk.CTk):
     def _selected_opt_keys(self) -> list:
         return [key for key, var in self.opt_vars.items() if var.get()]
 
-    # ============================================================ LOG TAB
+    # ================================================= ВКЛАДКА «ЖУРНАЛ»
     def _build_log_tab(self, parent):
         """Вкладка журнала операций."""
         parent.grid_columnconfigure(0, weight=1)
@@ -1036,7 +1036,7 @@ class CleanerApp(ctk.CTk):
         self.log_box.pack(fill="both", expand=True, padx=14, pady=(6, 14))
         self.log_box.configure(state="disabled")
 
-    # ============================================================== FOOTER
+    # ============================================================== ПОДВАЛ
     def _build_footer(self):
         footer = ctk.CTkFrame(self, fg_color=COLOR_CARD, corner_radius=12)
         footer.pack(fill="x", padx=14, pady=(8, 14))

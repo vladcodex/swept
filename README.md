@@ -1,16 +1,49 @@
 # Swept
 
-**Windows 10/11 cleanup, app installer and optimizer in one dark-themed GUI.**
-Bilingual interface (Русский / English), single-file `.exe`, no telemetry, no bundled offers.
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11-0078D6.svg)](https://github.com/vladcodex/swept)
+[![Version](https://img.shields.io/badge/Version-1.1.0-brightgreen.svg)](https://github.com/vladcodex/swept/releases/latest)
+[![UI](https://img.shields.io/badge/UI-%D0%A0%D0%A3%20%2F%20EN-lightgrey.svg)](https://github.com/vladcodex/swept)
 
-Swept removes temporary files and browser traces, installs and updates software through
-`winget`, and applies a set of safe, reversible Windows tweaks — all from one window with
-a dry-run mode that shows exactly what would be deleted.
+**One window to clean, install and tune Windows 10/11 — safely.**
+
+Free and open source, with a dark bilingual interface (Русский / English):
+
+- 🧹 **Clean** — temp files, browser caches, Windows Update cache, Recycle Bin, logs, dumps
+  and game-launcher junk. Analyze first, delete only what you confirm.
+- 📦 **Install** — search and install any `winget` package, update everything at once, or
+  pick individual apps from 7 curated sets (25 packages).
+- ⚡ **Optimize** — 12 safe Windows tweaks (telemetry, power plan, background apps, Game DVR,
+  widgets…) with one-click rollback to defaults.
+
+No telemetry, no bundled offers, no background services — and every deleted file and
+changed setting is written to the log.
 
 **[⬇ Download the latest release](https://github.com/vladcodex/swept/releases/latest)** —
-one `.exe`, nothing to install.
+either the portable `Swept.exe` (just run it) or `Swept-Setup-1.1.0.exe` (a normal Windows
+installer with a Start Menu shortcut and a proper uninstaller).
 
 ![Swept — cleanup tab](docs/cleanup-en.png)
+
+---
+
+## Contents
+
+- [What it does](#what-it-does)
+- [Safety model](#safety-model)
+- [Requirements](#requirements)
+- [Run from source](#run-from-source)
+- [Build a single .exe](#build-a-single-exe)
+- [Build the installer](#build-the-installer-optional)
+- [Command line](#command-line)
+- [Project layout](#project-layout)
+- [Localization](#localization)
+- [Limitations](#limitations)
+- [Found a bug?](#found-a-bug)
+- [Questions and ideas](#questions-and-ideas)
+- [Disclaimer](#disclaimer)
+- [License](#license)
+- [По-русски](#по-русски)
 
 ---
 
@@ -31,7 +64,7 @@ one `.exe`, nothing to install.
 
 ### 📦 Install and update
 
-- Search any package in the `winget` catalogue and install it by clicking a row.
+- Search any package in the `winget` catalog and install it by clicking a row.
 - Update a single package, or everything installed at once.
 - **Popular app sets** in a column on the left: office, viewers and printing, browsers,
   archivers, media and codecs, chat and calls, handy utilities — 25 packages in total.
@@ -44,7 +77,7 @@ one `.exe`, nothing to install.
 
 ### ⚡ Optimize
 
-Twelve safe and reversible tweaks, in two groups:
+Twelve safe tweaks in two groups — eleven of them can be rolled back in one click:
 
 - **Basic settings** — telemetry, advertising ID and suggestions, high-performance power plan, hibernation, background apps, Game DVR, startup delay, visual effects.
 - **Full debloat** — built-in promo/game apps (Weather, News, Maps, Skype, Solitaire, Candy Crush…), taskbar widgets and Copilot, web search suggestions, Windows Error Reporting.
@@ -106,6 +139,9 @@ elevation through its manifest.
 - `customtkinter` (installed from `requirements.txt`)
 - `winget` (App Installer from the Microsoft Store) — only for the Install tab
 
+Administrator rights are optional. Without them the system locations (`C:\Windows\Temp`,
+the update cache) are skipped and reported instead of failing silently.
+
 ## Run from source
 
 ```bat
@@ -136,6 +172,21 @@ python build.py --console     :: keep the console for debugging
 
 The build environment must have `customtkinter` installed: the GUI imports it inside a
 `try/except ImportError`, so PyInstaller otherwise treats it as optional and leaves it out.
+
+### Build the installer (optional)
+
+`dist\Swept.exe` is a portable program — it runs without being installed. If you want a
+classic Windows setup with a Start Menu shortcut and an entry in *Apps & Features*,
+compile the Inno Setup script:
+
+```bat
+winget install JRSoftware.InnoSetup
+"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\setup.iss
+```
+
+The result is `dist\Swept-Setup-1.1.0.exe` — a bilingual (RU/EN) installer that asks for
+administrator rights, installs to `Program Files`, and offers a desktop shortcut as an
+optional task. It also ships `README.md` and `LICENSE` next to the program.
 
 ---
 
@@ -172,6 +223,7 @@ python cleaner_optimize.py --revert-all    :: restore every tweak to Windows def
 | `cleaner_i18n.py` | Interface strings (RU/EN), language switching, unit formatting |
 | `cleaner_settings.py` | Settings storage: `HKEY_CURRENT_USER\Software\Swept`, JSON fallback |
 | `build.py` | PyInstaller wrapper with icon, version resource and manifest |
+| `installer/setup.iss` | Optional Inno Setup script — a classic Windows installer (Start Menu shortcut, uninstaller) |
 
 ## Localization
 
@@ -210,6 +262,33 @@ To add a language:
 - The Install tab depends on `winget` output parsing, which Microsoft changes from time to time.
 - The `.exe` is not code-signed, so SmartScreen may warn about an unknown publisher on first run.
 
+## Found a bug?
+
+Please report it — that is how the program gets fixed:
+**[github.com/vladcodex/swept/issues](https://github.com/vladcodex/swept/issues)**
+
+To make a report useful, include:
+
+- what you did and what you expected to happen,
+- what actually happened instead,
+- your Windows version (e.g. Windows 11 24H2) and whether Swept ran as administrator,
+- the last lines of the **Log** tab (the app never sends anything anywhere — the log stays on your machine).
+
+## Questions and ideas
+
+For anything that is not a bug — how something works, what a setting means, a feature you
+would like to see — there is
+**[Discussions](https://github.com/vladcodex/swept/discussions)**:
+
+- **Q&A** — ask how the program behaves and why.
+- **Ideas** — propose a feature or an improvement.
+- **General** — everything else.
+
+Bugs belong in Issues, everything else in Discussions — that keeps the bug list clean and
+the status of each report visible.
+
+---
+
 ## Disclaimer
 
 Swept deletes files and changes Windows settings. It is built conservatively and tested, but
@@ -218,15 +297,36 @@ take no responsibility for data loss or system damage.
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE) — free to use, modify and redistribute. The app itself is free, with no
+paid tier and no bundled offers.
 
 ---
 
 ## По-русски
 
-**Swept** — утилита для Windows 10/11 в одном окне: очистка временных файлов и следов браузеров,
-установка и обновление программ через `winget`, безопасная оптимизация системы.
-Интерфейс переключается между русским и английским на лету — из выпадающего списка в шапке окна.
+**Swept** — бесплатная утилита с тёмным интерфейсом на двух языках (русский / English) в одном окне:
+
+- 🧹 **Очистка** — временные файлы, кэш браузеров, кэш обновлений Windows, Корзина, логи,
+  дампы и мусор игровых лаунчеров. Сначала «Анализ» — удаление только по вашему подтверждению.
+- 📦 **Установка** — поиск и установка любого пакета из `winget`, обновление всех программ
+  сразу или выбор отдельных программ из 7 готовых наборов (25 пакетов).
+- ⚡ **Оптимизация** — 12 безопасных настроек Windows (телеметрия, схема электропитания,
+  фоновые приложения, Game DVR, виджеты…) с откатом всех изменений одной кнопкой.
+
+Никакой слежки, никаких встроенных предложений и фоновых служб — один `.exe`, а каждое
+удалённый файл и каждая изменённая настройка попадают в журнал.
+
+**Нашли баг?** Напишите об этом — именно так программа и исправляется:
+[github.com/vladcodex/swept/issues](https://github.com/vladcodex/swept/issues).
+Чтобы отчёт был полезен, опишите: что вы делали и чего ожидали, что произошло на самом деле,
+версию Windows (например, Windows 11 24H2), были ли права администратора, и последние
+строки вкладки «Журнал» (программа ничего никуда не отправляет — журнал остаётся у вас).
+
+**Вопросы и идеи** — если это не баг: как что-то работает, что означает настройка, какую
+функку добавить. Для этого есть
+[Discussions](https://github.com/vladcodex/swept/discussions): **Q&A** — вопросы,
+**Ideas** — предложения, **General** — всё остальное. Баги — в Issues, всё прочее —
+в Discussions: так список багов остаётся чистым, а статус каждого отчёта виден.
 
 Выбранный язык хранится в реестре (как в Reg Organizer):
 
@@ -248,7 +348,8 @@ HKEY_CURRENT_USER\Software\Swept
   программ (офис, просмотр и печать, браузеры, архиваторы, медиа, связь, утилиты — 25 пакетов).
   Набор только подсказывает: кнопка «Выбрать» открывает список программ с галочками, и
   ставится ровно то, что отмечено, а не весь набор целиком.
-- **Оптимизация** — 12 обратимых настроек: телеметрия, реклама, схема электропитания,
+- **Оптимизация** — 12 безопасных настроек (11 из них откатываются одной кнопкой):
+  телеметрия, реклама, схема электропитания,
   гибернация, фоновые приложения, Game DVR, виджеты и Copilot, отчёты об ошибках и другое.
   Во время применения в панели «Ход выполнения» видно, какой пункт выполняется сейчас
   (со счётчиком «3 из 8») и чем закончился каждый: выполнено, пропущено, недоступно
@@ -270,3 +371,4 @@ HKEY_CURRENT_USER\Software\Swept
 
 Запуск из исходников: `pip install -r requirements.txt`, затем `python cleaner_gui.py`.
 Сборка exe: `python build.py` → `dist\Swept.exe`.
+Установщик (Inno Setup): `ISCC.exe installer\setup.iss` → `dist\Swept-Setup-1.1.0.exe`.
