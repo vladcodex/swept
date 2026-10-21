@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Build artifacts
+.build/
+build/
+dist/
+*.spec
+*.exe
+
+# Local settings (language choice etc.)
+settings.json
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Editors / OS
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+
+# Old drafts kept locally, not part of the project
+_archive/
