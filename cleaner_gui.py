@@ -901,15 +901,14 @@ class CleanerApp(ctk.CTk):
             command=self.on_optimize)
         self.opt_apply_btn.pack(side="left")
 
-        # Откат: возвращает все изменённые настройки к значениям Windows.
-        # Стоит рядом с «Применить», но нейтрального цвета: это не опасное
-        # действие, а обратное — именно оно и делает оптимизацию обратимой.
-        self.opt_revert_btn = ctk.CTkButton(
-            btn_frame, text=i18n.t("btn.revert_all"), width=180, height=38,
+        # Точка восстановления: создаётся через PowerShell Checkpoint-Computer.
+        # Безопасная операция — ставим рядом с «Применить» нейтральным цветом.
+        self.opt_restore_btn = ctk.CTkButton(
+            btn_frame, text=i18n.t("btn.restore_point"), width=200, height=38,
             font=ctk.CTkFont(size=13, weight="bold"),
-            fg_color=COLOR_CARD, hover_color=COLOR_RED,
-            command=self.on_revert)
-        self.opt_revert_btn.pack(side="left", padx=(8, 0))
+            fg_color=COLOR_CARD, hover_color=COLOR_ACCENT,
+            command=self.on_create_restore_point)
+        self.opt_restore_btn.pack(side="left", padx=(8, 0))
 
         self.opt_status = ctk.CTkLabel(right, text=i18n.t("status.ready"),
                                        font=ctk.CTkFont(size=12),
@@ -939,12 +938,11 @@ class CleanerApp(ctk.CTk):
         self.opt_tip.pack(anchor="w", padx=14, pady=(0, 8))
 
     # ------------------------------------------- живой список оптимизации
-    def _opt_live_show(self, keys, revert: bool = False):
+    def _opt_live_show(self, keys):
         """Показывает список выбранных пунктов и сбрасывает их состояние."""
         if not getattr(self, "opt_live", None):
             return
-        self.opt_live_title.configure(
-            text=i18n.t("opt.live_revert_title" if revert else "opt.live_title"))
+        self.opt_live_title.configure(text=i18n.t("opt.live_title"))
         for widget in self.opt_rows.values():
             widget["row"].destroy()
         self.opt_rows = {}
@@ -1189,13 +1187,12 @@ class CleanerApp(ctk.CTk):
             self._opt_live_finish()
             if msg[1]:
                 messagebox.showinfo(i18n.t("dlg.optimization"), msg[1])
-        elif kind == "opt_revert_done":
+        elif kind == "restore_point_done":
             self._set_running(False)
-            self.status_label.configure(text=i18n.t("status.rev_done"))
+            self.status_label.configure(text=i18n.t("status.restore_done"))
             self.opt_status.configure(text=i18n.t("status.done"))
-            self._opt_live_finish()
             if msg[1]:
-                messagebox.showinfo(i18n.t("dlg.revert_done"), msg[1])
+                messagebox.showinfo(i18n.t("dlg.restore_done"), msg[1])
 
     def _check_winget_worker(self):
         """Фоновая проверка доступности winget (не блокирует интерфейс)."""
@@ -1433,8 +1430,8 @@ class CleanerApp(ctk.CTk):
             button.configure(state="disabled" if busy else "normal")
         if getattr(self, "opt_apply_btn", None):
             self.opt_apply_btn.configure(state="disabled" if busy else "normal")
-        if getattr(self, "opt_revert_btn", None):
-            self.opt_revert_btn.configure(state="disabled" if busy else "normal")
+        if getattr(self, "opt_restore_btn", None):
+            self.opt_restore_btn.configure(state="disabled" if busy else "normal")
         self.select_btn.configure(state="disabled" if busy else "normal")
         can_act = (not busy) and bool(self.selected_pkg)
         self.install_pkg_btn.configure(state="normal" if can_act else "disabled")
@@ -1864,49 +1861,33 @@ class CleanerApp(ctk.CTk):
             target=self._optimize_worker, args=(keys,), daemon=True)
         thread.start()
 
-    def on_revert(self):
-        """Откатывает все изменённые настройки к значениям Windows по умолчанию."""
+    def on_create_restore_point(self):
+        """Создаёт точку восстановления системы через PowerShell."""
         if self.running:
             return
-        count = len(opt.REVERT_KEYS)
-        if not messagebox.askyesno(i18n.t("dlg.revert_title"),
-                                   i18n.t("dlg.revert_text", count)):
-            return
         self._set_running(True)
-        self.stop_event.clear()
-        self.opt_status.configure(text=i18n.t("opt.reverting"))
-        self.opt_progress.set(0)
-        self._opt_live_show(opt.REVERT_KEYS, revert=True)
-        thread = threading.Thread(target=self._revert_worker, daemon=True)
+        self.opt_status.configure(text=i18n.t("opt.restore_running"))
+        thread = threading.Thread(target=self._restore_worker, daemon=True)
         thread.start()
 
-    def _revert_worker(self):
-        """Фоновый откат: та же механика прогресса, что у оптимизации."""
+    def _restore_worker(self):
+        """Фоновое создание точки восстановления."""
         def log(text):
             self.msg_queue.put(("log", text))
-        def status(text):
-            self.msg_queue.put(("opt_status", text))
-        def on_progress(done, total):
-            self.msg_queue.put(("opt_progress", done, total))
-        def on_item_start(key, index, total):
-            self.msg_queue.put(("opt_item_start", key, index, total))
-        def on_item_done(key, kind, reason):
-            self.msg_queue.put(("opt_item_done", key, kind, reason))
         try:
             log("")
-            log(i18n.t("log.rev_header"))
-            stats = opt.revert_optimizations(
-                on_log=log, on_status=status,
-                stop_event=self.stop_event, on_progress=on_progress,
-                on_item_start=on_item_start, on_item_done=on_item_done)
-            result_text = opt.result_summary(stats, revert=True)
-            log("")
-            log(i18n.t("log.result_header"))
-            log(result_text)
-            self.msg_queue.put(("opt_revert_done", result_text))
+            ok, rmsg = opt.create_system_restore_point()
+            if ok:
+                log(i18n.t("log.restore_ok"))
+            else:
+                log(i18n.t("log.restore_fail", rmsg) if rmsg
+                    else i18n.t("log.restore_no_admin"))
+            self.msg_queue.put(("restore_point_done",
+                                i18n.t("dlg.restore_done")))
         except Exception as exc:
             log(i18n.t("log.error") + repr(exc))
-            self.msg_queue.put(("opt_revert_done", i18n.t("log.error_text", exc)))
+            self.msg_queue.put(("restore_point_done",
+                                i18n.t("log.error_text", exc)))
 
     def _optimize_worker(self, keys):
         def log(text):

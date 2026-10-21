@@ -150,13 +150,15 @@ STRINGS = {
         "opt.tip": "Совет: для полной оптимизации запустите\n"
                    "программу от имени администратора.",
         "btn.apply": "⚙  Применить выбранное",
-        "btn.revert_all": "↺  Откатить всё",
+        "btn.restore_point": "🛡  Точка восстановления",
         "btn.mark_safe": "Отметить безопасные",
         "opt.running": "Оптимизация Windows…",
-        "opt.reverting": "Откат настроек…",
-        "opt.reverting_step": "Возвращаю {}/{}: {}",
-        "opt.revert_count": "Откат: {} пунктов",
-        "opt.live_revert_title": "Ход отката",
+        "opt.restore_running": "Создание точки восстановления…",
+        "opt.restore_creating": "Создаю точку восстановления системы…",
+        "opt.restore_ok": "Точка восстановления создана.",
+        "opt.restore_skip": "Точка восстановления не создана: {}",
+        "opt.restore_skip_no_admin": "Без прав администратора точку восстановления создать нельзя — пропускаем.",
+        "opt.restore_fail": "Не удалось создать точку восстановления",
 
         # ---------------------------------------------------------- журнал
         "log.title": "📋  Журнал операций",
@@ -166,22 +168,13 @@ STRINGS = {
         "status.scanning": "Сканирование…",
         "status.cleaning": "Очистка…",
         "status.opt_done": "Оптимизация завершена",
-        "status.rev_done": "Откат завершён",
+        "status.restore_done": "Точка восстановления создана",
 
         # --------------------------------------------------------- диалоги
         "dlg.ok": "Готово",
         "dlg.error": "Ошибка",
         "dlg.optimization": "Оптимизация",
-        "dlg.revert_title": "Откат настроек",
-        "dlg.revert_text": "Вернуть к значениям Windows по умолчанию: {} настроек.\n\n"
-                           "• реестр — записанные значения удаляются, и Windows снова "
-                           "использует свои;\n"
-                           "• электропитание — «Сбалансированная» схема, гибернация "
-                           "включается обратно.\n\n"
-                           "Удалённые встроенные приложения сами не вернутся — их "
-                           "устанавливает Microsoft Store.\n\n"
-                           "Продолжить?",
-        "dlg.revert_done": "Откат настроек",
+        "dlg.restore_done": "Точка восстановления",
         "dlg.confirm": "Подтверждение",
         "dlg.no_admin_title": "Нет прав администратора",
         "dlg.no_admin_text": "Программа запущена без прав администратора.\n\n"
@@ -281,16 +274,9 @@ STRINGS = {
                           "  Недоступно в этой сборке Windows: {}\n"
                           "  Ошибки: {}",
         "log.opt_detail": "  • {} — {}",
-        "log.rev_header": "========== ОТКАТ НАСТРОЕК ==========",
-        "log.rev_item": "--- {} {} ---",
-        "log.rev_ok": "  ✔ возвращено значение Windows по умолчанию",
-        "log.rev_result": "Откат завершён:\n"
-                          "  Возвращено: {}\n"
-                          "  Не изменено (нет прав админа): {}\n"
-                          "  Недоступно в этой сборке Windows: {}\n"
-                          "  Ошибки: {}",
-        "log.rev_irreversible": "  • Встроенные приложения автоматически не "
-                                "возвращаются — установите их из Microsoft Store.",
+        "log.restore_ok": "  ✔ точка восстановления системы создана",
+        "log.restore_fail": "  ⚠ не удалось создать точку восстановления: {}",
+        "log.restore_no_admin": "  ⚠ нужны права администратора — точка восстановления не создана",
         "msg.install_done": "Установка завершена.",
         "msg.install_error": "Ошибка при установке.",
         "msg.upgrade_done": "Обновление завершено.",
@@ -453,13 +439,15 @@ STRINGS = {
         "opt.tip": "Tip: for full optimization run the program\n"
                    "as administrator.",
         "btn.apply": "⚙  Apply selected",
-        "btn.revert_all": "↺  Roll back all",
+        "btn.restore_point": "🛡  Restore point",
         "btn.mark_safe": "Mark safe defaults",
         "opt.running": "Optimizing Windows…",
-        "opt.reverting": "Rolling back settings…",
-        "opt.reverting_step": "Restoring {}/{}: {}",
-        "opt.revert_count": "Rollback: {} items",
-        "opt.live_revert_title": "Rollback progress",
+        "opt.restore_running": "Creating restore point…",
+        "opt.restore_creating": "Creating a system restore point…",
+        "opt.restore_ok": "Restore point created.",
+        "opt.restore_skip": "Restore point not created: {}",
+        "opt.restore_skip_no_admin": "Without administrator rights a restore point cannot be created — skipping.",
+        "opt.restore_fail": "Failed to create a restore point",
 
         # ---------------------------------------------------------- журнал
         "log.title": "📋  Operations log",
@@ -469,21 +457,13 @@ STRINGS = {
         "status.scanning": "Scanning…",
         "status.cleaning": "Cleaning…",
         "status.opt_done": "Optimization finished",
-        "status.rev_done": "Rollback finished",
+        "status.restore_done": "Restore point created",
 
         # --------------------------------------------------------- диалоги
         "dlg.ok": "Done",
         "dlg.error": "Error",
         "dlg.optimization": "Optimization",
-        "dlg.revert_title": "Roll back settings",
-        "dlg.revert_text": "Reset {} settings to Windows defaults.\n\n"
-                           "• registry — values written by Swept are deleted, so "
-                           "Windows uses its own again;\n"
-                           "• power — the Balanced plan, hibernation is turned back on.\n\n"
-                           "Removed built-in apps are not restored automatically — "
-                           "get them from Microsoft Store.\n\n"
-                           "Continue?",
-        "dlg.revert_done": "Rollback finished",
+        "dlg.restore_done": "Restore point",
         "dlg.confirm": "Confirm",
         "dlg.no_admin_title": "Administrator rights required",
         "dlg.no_admin_text": "The program is running without administrator rights.\n\n"
@@ -585,16 +565,9 @@ STRINGS = {
                           "  Unavailable on this Windows build: {}\n"
                           "  Errors: {}",
         "log.opt_detail": "  • {} — {}",
-        "log.rev_header": "========== ROLLBACK ==========",
-        "log.rev_item": "--- {} {} ---",
-        "log.rev_ok": "  ✔ Windows default value restored",
-        "log.rev_result": "Rollback finished:\n"
-                          "  Restored: {}\n"
-                          "  Unchanged (no admin rights): {}\n"
-                          "  Unavailable on this Windows build: {}\n"
-                          "  Errors: {}",
-        "log.rev_irreversible": "  • Built-in apps are not restored automatically — "
-                                "get them from Microsoft Store.",
+        "log.restore_ok": "  ✔ system restore point created",
+        "log.restore_fail": "  ⚠ failed to create restore point: {}",
+        "log.restore_no_admin": "  ⚠ administrator rights required — restore point not created",
         "msg.install_done": "Installation finished.",
         "msg.install_error": "Installation failed.",
         "msg.upgrade_done": "Upgrade finished.",

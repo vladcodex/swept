@@ -5,27 +5,23 @@ cleaner_optimize.py — МОДУЛЬ БЕЗОПАСНОЙ ОПТИМИЗАЦИИ
 
 Назначение
 ----------
-Набор консервативных, обратимых настроек для «чистой» (голой) системы
+Набор консервативных, безопасных настроек для «чистой» (голой) системы
 Windows 10 и Windows 11. Цель — слегка ускорить систему и убрать рекламный
 / телеметрический «шум», НЕ ломая стабильность.
 
 Правила безопасности модуля
 ---------------------------
     * Никаких удалений системных файлов, драйверов или служб.
-    * Только настройки реестра (winreg) и штатные утилиты (powercfg),
-      которые можно отменить (вернуть значение/удалить ключ).
+    * Только настройки реестра (winreg) и штатные утилиты (powercfg).
     * Каждый пункт запускается в try/except — одна неудача не прерывает
       остальные.
     * Пункты, требующие прав администратора, помечены admin=True; без прав
       они пропускаются с пояснением, а не «падают».
     * Поддерживается ВСЕ версии Windows 10 и 11 (определяется по build-номеру
       из реестра: >= 22000 — Windows 11, иначе — Windows 10).
-
-Как откатить
-------------
-    * Открыть «Настройки -> Конфиденциальность/Персонализация» и вернуть
-      нужные опции, либо удалить соответствующие ключи реестра (пути
-      указаны в описании каждого пункта и выводятся в журнал).
+    * Перед любыми изменениями Swept создаёт точку восстановления системы
+      (powershell Checkpoint-Computer), чтобы можно было откатиться штатными
+      средствами Windows — «Панель управления -> Восстановление».
 
 Модуль не зависит от GUI и может запускаться как скрипт:
     python cleaner_optimize.py --list
@@ -435,140 +431,6 @@ def _opt_wer():
                            "Disabled", 1),
     ])
 
-
-# ---------------------------------------------------------------------------
-# Откат: возврат значений Windows по умолчанию
-# ---------------------------------------------------------------------------
-# Каждая функция ниже — обратная пара к одноимённой _opt_* выше. Там, где
-# Swept записывал значение в реестр, откат это значение удаляет: отсутствующее
-# значение и есть заводское состояние Windows. Там, где менялась настройка
-# целиком (схема электропитания, гибернация), вызывается обратная команда.
-
-# «Сбалансированная» схема электропитания — та, что Windows ставит по умолчанию.
-BALANCED_POWER_PLAN = "381b4222-f694-41f0-9685-ff5bb260df2e"
-
-
-def _rev_telemetry():
-    """Убирает политики телеметрии: Windows снова работает по умолчанию."""
-    return _write_many([
-        lambda: _reg_delete(winreg.HKEY_LOCAL_MACHINE, _HKLM_POL_DATA,
-                            "AllowTelemetry"),
-        lambda: _reg_delete(
-            winreg.HKEY_LOCAL_MACHINE,
-            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\DataCollection",
-            "AllowTelemetry"),
-        lambda: _reg_delete(winreg.HKEY_LOCAL_MACHINE, _HKLM_POL_DATA,
-                            "MaxTelemetryAllowed"),
-    ])
-
-
-def _rev_advertising():
-    """Возвращает рекламный ID, советы и плитки в меню «Пуск»."""
-    cdm = _HKCU_CURRENT + r"\ContentDeliveryManager"
-    return _write_many([
-        lambda: _reg_delete(winreg.HKEY_CURRENT_USER,
-                            _HKCU_CURRENT + r"\AdvertisingInfo", "Enabled"),
-        lambda: _reg_delete(winreg.HKEY_CURRENT_USER, cdm, "SoftLandingEnabled"),
-        lambda: _reg_delete(winreg.HKEY_CURRENT_USER, cdm,
-                            "SystemPaneSuggestionsEnabled"),
-        lambda: _reg_delete(winreg.HKEY_CURRENT_USER, cdm,
-                            "SubscribedContent-338389Enabled"),
-        lambda: _reg_delete(winreg.HKEY_CURRENT_USER, cdm,
-                            "SubscribedContent-310093Enabled"),
-        lambda: _reg_delete(winreg.HKEY_CURRENT_USER, cdm,
-                            "RotatingLockScreenEnabled"),
-    ])
-
-
-def _rev_power():
-    """Возвращает «Сбалансированную» схему электропитания."""
-    code, out = _run([system_tool("powercfg.exe"), "/setactive",
-                      BALANCED_POWER_PLAN])
-    return _util_result(code, out)
-
-
-def _rev_hibernate():
-    """Включает гибернацию обратно (powercfg /h on)."""
-    code, out = _run([system_tool("powercfg.exe"), "/h", "on"])
-    return _util_result(code, out)
-
-
-def _rev_background():
-    """Разрешает приложениям снова работать в фоне."""
-    return _write_many([
-        lambda: _reg_delete(winreg.HKEY_CURRENT_USER,
-                            _HKCU_CURRENT + r"\BackgroundAccessApplications",
-                            "GlobalUserDisabled"),
-        lambda: _reg_delete(winreg.HKEY_CURRENT_USER,
-                            _HKCU_CURRENT + r"\Search",
-                            "BackgroundAppGlobalToggle"),
-    ])
-
-
-def _rev_gamedvr():
-    """Включает Game DVR и оверлей обратно."""
-    return _write_many([
-        lambda: _reg_write(winreg.HKEY_CURRENT_USER,
-                           r"System\GameConfigStore", "GameDVR_Enabled", 1),
-        lambda: _reg_write(winreg.HKEY_CURRENT_USER,
-                           _HKCU_CURRENT + r"\GameDVR", "AppCaptureEnabled", 1),
-    ])
-
-
-def _rev_startup_delay():
-    """Возвращает стандартную задержку автозагрузки."""
-    return _write_many([
-        lambda: _reg_delete(winreg.HKEY_CURRENT_USER,
-                            _HKCU_CURRENT + r"\Explorer\Serialize",
-                            "StartupDelayInMSec"),
-    ])
-
-
-def _rev_visualfx():
-    """Возвращает «Пусть Windows выбирает параметры оформления»."""
-    return _write_many([
-        lambda: _reg_delete(winreg.HKEY_CURRENT_USER,
-                            _HKCU_CURRENT + r"\Explorer\VisualEffects",
-                            "VisualFXSetting"),
-    ])
-
-
-def _rev_widgets_copilot():
-    """Возвращает виджеты и Copilot в панель задач."""
-    return _write_many([
-        lambda: _reg_delete(winreg.HKEY_CURRENT_USER,
-                            _HKCU_CURRENT + r"\Explorer\Advanced", "TaskbarDa"),
-        lambda: _reg_delete(winreg.HKEY_CURRENT_USER,
-                            r"Software\Policies\Microsoft\Dsh",
-                            "AllowNewsAndInterests"),
-        lambda: _reg_delete(
-            winreg.HKEY_CURRENT_USER,
-            r"Software\Policies\Microsoft\Windows\WindowsCopilot",
-            "TurnOffWindowsCopilot"),
-    ])
-
-
-def _rev_search_suggest():
-    """Возвращает веб-подсказки в поиске и меню «Пуск»."""
-    return _write_many([
-        lambda: _reg_delete(winreg.HKEY_CURRENT_USER,
-                            r"Software\Policies\Microsoft\Windows\Explorer",
-                            "DisableSearchBoxSuggestions"),
-        lambda: _reg_delete(winreg.HKEY_CURRENT_USER,
-                            _HKCU_CURRENT + r"\SearchSettings",
-                            "IsDynamicSearchBoxEnabled"),
-    ])
-
-
-def _rev_wer():
-    """Включает отчёты об ошибках Windows обратно."""
-    return _write_many([
-        lambda: _reg_delete(winreg.HKEY_LOCAL_MACHINE,
-                            r"SOFTWARE\Microsoft\Windows\Windows Error Reporting",
-                            "Disabled"),
-    ])
-
-
 # Список оптимизаций для интерфейса:
 #   key, title, group, description, admin, apply (применяется безопасно и обратимо)
 OPTIMIZATIONS = [
@@ -583,7 +445,6 @@ OPTIMIZATIONS = [
                    "(registry: DataCollection\\AllowTelemetry=0)",
         "admin": True,
         "apply": _opt_telemetry,
-        "revert": _rev_telemetry,
     },
     {
         "key": "advertising",
@@ -596,7 +457,6 @@ OPTIMIZATIONS = [
                    "from Start and notifications.",
         "admin": False,
         "apply": _opt_advertising,
-        "revert": _rev_advertising,
     },
     {
         "key": "power",
@@ -609,7 +469,6 @@ OPTIMIZATIONS = [
                    "(reduces desktop lag).",
         "admin": True,
         "apply": _opt_power,
-        "revert": _rev_power,
     },
     {
         "key": "hibernate",
@@ -622,7 +481,6 @@ OPTIMIZATIONS = [
                    "powercfg /h on. Note: turns off Fast Startup.",
         "admin": True,
         "apply": _opt_hibernate,
-        "revert": _rev_hibernate,
     },
     {
         "key": "background",
@@ -633,7 +491,6 @@ OPTIMIZATIONS = [
         "desc_en": "Stops apps from running in the background (lower load).",
         "admin": False,
         "apply": _opt_background,
-        "revert": _rev_background,
     },
     {
         "key": "gamedvr",
@@ -646,7 +503,6 @@ OPTIMIZATIONS = [
                    "(lower load, shorter delays).",
         "admin": False,
         "apply": _opt_gamedvr,
-        "revert": _rev_gamedvr,
     },
     {
         "key": "startup_delay",
@@ -657,7 +513,6 @@ OPTIMIZATIONS = [
         "desc_en": "Startup programs begin launching immediately.",
         "admin": False,
         "apply": _opt_startup_delay,
-        "revert": _rev_startup_delay,
     },
     {
         "key": "visualfx",
@@ -670,7 +525,6 @@ OPTIMIZATIONS = [
                    "Settings -> Accessibility -> Visual effects.",
         "admin": False,
         "apply": _opt_visualfx,
-        "revert": _rev_visualfx,
     },
     {
         "key": "debloat_apps",
@@ -687,7 +541,6 @@ OPTIMIZATIONS = [
         "apply": _opt_debloat_apps,
         # Встроенные приложения удаляются безвозвратно: вернуть их можно
         # только из Microsoft Store, поэтому обратного действия нет.
-        "revert": None,
     },
     {
         "key": "widgets_copilot",
@@ -699,7 +552,6 @@ OPTIMIZATIONS = [
                    "the news feed.",
         "admin": False,
         "apply": _opt_widgets_copilot,
-        "revert": _rev_widgets_copilot,
     },
     {
         "key": "search_suggest",
@@ -711,7 +563,6 @@ OPTIMIZATIONS = [
                    "and search.",
         "admin": False,
         "apply": _opt_search_suggest,
-        "revert": _rev_search_suggest,
     },
     {
         "key": "wer",
@@ -722,7 +573,6 @@ OPTIMIZATIONS = [
         "desc_en": "Stops sending and showing error reports. Reversible.",
         "admin": True,
         "apply": _opt_wer,
-        "revert": _rev_wer,
     },
 ]
 
@@ -730,12 +580,6 @@ OPTIMIZATIONS = [
 SAFE_DEFAULT_KEYS = ["telemetry", "advertising", "search_suggest",
                      "background", "gamedvr", "startup_delay",
                      "visualfx", "widgets_copilot"]
-
-# Что можно откатить и что нельзя. Удалённые встроенные приложения вернуть
-# автоматически невозможно — их ставит обратно Microsoft Store.
-REVERT_KEYS = [item["key"] for item in OPTIMIZATIONS if item.get("revert")]
-IRREVERSIBLE_KEYS = [item["key"] for item in OPTIMIZATIONS
-                     if not item.get("revert")]
 
 
 def get_optimization(key: str):
@@ -746,9 +590,46 @@ def get_optimization(key: str):
     return None
 
 
+def create_system_restore_point(desc: str = "Swept optimization") -> tuple:
+    """
+    Создаёт точку восстановления системы через PowerShell Checkpoint-Computer.
+
+    Возвращает (ok, message). Требует прав администратора — без них Windows
+    откажет, и мы об этом честно сообщаем (не «падаем»).
+    """
+    if winreg is None:
+        return False, i18n.t("opt.not_windows")
+    ps = system_tool("powershell.exe", "WindowsPowerShell", "v1.0")
+    safe_desc = str(desc).replace('"', "'")
+    script = ('Checkpoint-Computer -Description "{desc}" '
+              '-RestorePointType "MODIFY_SETTINGS"').format(desc=safe_desc)
+    code, out = _run([ps, "-NoProfile", "-NonInteractive", "-Command", script],
+                     timeout=120)
+    if code == 0:
+        return True, ""
+    text = (out or "").strip()
+    if _denied_in_text(text):
+        return False, admin_required_message()
+    return False, (text[:200] or i18n.t("opt.restore_fail"))
+
+
+def _ensure_restore_point(on_log=None) -> None:
+    """Создаёт точку восстановления перед изменениями и логирует итог."""
+    if on_log:
+        on_log(i18n.t("opt.restore_creating"))
+    ok, rmsg = create_system_restore_point()
+    if on_log:
+        if ok:
+            on_log(i18n.t("opt.restore_ok"))
+        else:
+            on_log(i18n.t("opt.restore_skip", rmsg) if rmsg
+                   else i18n.t("opt.restore_skip_no_admin"))
+
+
 def apply_optimizations(keys, on_log=None, on_status=None,
                         stop_event=None, on_progress=None,
-                        on_item_start=None, on_item_done=None) -> dict:
+                        on_item_start=None, on_item_done=None,
+                        create_restore_point: bool = True) -> dict:
     """
     Применяет выбранные оптимизации.
 
@@ -775,65 +656,31 @@ def apply_optimizations(keys, on_log=None, on_status=None,
         on_log(i18n.t("opt.items_count", len(keys)))
 
     items = [get_optimization(key) for key in keys]
-    return _run_items([item for item in items if item], mode="apply",
+    # Безопасность: перед изменениями создаём точку восстановления системы
+    # (нужны права администратора; без них — просто предупреждаем, не падаем).
+    if create_restore_point:
+        _ensure_restore_point(on_log)
+    return _run_items([item for item in items if item],
                       on_log=on_log, on_status=on_status,
                       stop_event=stop_event, on_progress=on_progress,
                       on_item_start=on_item_start, on_item_done=on_item_done)
 
 
-def revert_optimizations(keys=None, on_log=None, on_status=None,
-                         stop_event=None, on_progress=None,
-                         on_item_start=None, on_item_done=None) -> dict:
-    """
-    Откатывает настройки: возвращает значения Windows по умолчанию.
 
-    keys — какие пункты откатить (по умолчанию — все, у которых есть
-    обратное действие, то есть REVERT_KEYS). Статистика и колбэки те же,
-    что у apply_optimizations, поэтому интерфейс обрабатывает откат так же,
-    как обычный прогон.
-
-    Удалённые встроенные приложения (debloat_apps) откатить нельзя: они
-    возвращаются только из Microsoft Store, поэтому пункт просто пропускается.
-    """
-    if keys is None:
-        # «Откатить всё» — значит все пункты: необратимые тоже попадают
-        # в список, чтобы о них честно написали в журнале.
-        keys = [item["key"] for item in OPTIMIZATIONS]
-    items = [get_optimization(key) for key in keys]
-    items = [item for item in items if item and item.get("revert")]
-
-    info = get_windows_info()
-    if on_log:
-        on_log("")
-        on_log(i18n.t("opt.os", info["display"], info["build"],
-                      info["edition"] or "—"))
-        on_log(i18n.t("opt.revert_count", len(items)))
-
-    stats = _run_items(items, mode="revert", on_log=on_log, on_status=on_status,
-                       stop_event=stop_event, on_progress=on_progress,
-                       on_item_start=on_item_start, on_item_done=on_item_done)
-
-    skipped_apps = [key for key in keys if key in IRREVERSIBLE_KEYS]
-    if skipped_apps and on_log:
-        on_log(i18n.t("log.rev_irreversible"))
-    return stats
-
-
-def _run_items(items, mode, on_log=None, on_status=None, stop_event=None,
+def _run_items(items, on_log=None, on_status=None, stop_event=None,
                on_progress=None, on_item_start=None, on_item_done=None) -> dict:
     """
-    Общий движок применения и отката.
+    Общий движок применения настроек.
 
-    mode — "apply" (записать настройки) или "revert" (вернуть по умолчанию).
-    Различаются только действие пункта и тексты в журнале, поэтому логика
-    классификации результата живёт в одном месте и не расходится.
+    Каждый пункт запускается через свой "apply", а итог классифицируется как
+    done/skipped/unsupported/failed; тексты итога — из i18n. Перед вызовом
+    этого движка apply_optimizations уже создаёт точку восстановления системы.
 
     Разделение итогов важно для интерфейса: «нет прав администратора» лечится
     перезапуском с повышением, «Windows защищает значение» — нет, а ошибка
     требует разбирательства. Раньше всё это сваливалось в «ошибки» или
     выдавалось за нехватку прав.
     """
-    revert = mode == "revert"
     stats = {"done": [], "skipped": [], "unsupported": [], "failed": [], "details": []}
     if winreg is None:
         if on_log:
@@ -852,14 +699,14 @@ def _run_items(items, mode, on_log=None, on_status=None, stop_event=None,
         if on_item_start:
             on_item_start(key, index, total)
         if on_status:
-            on_status(i18n.t("opt.reverting_step" if revert else "opt.applying_step",
+            on_status(i18n.t("opt.applying_step",
                              index, total, i18n.fld(item, "title")))
         if on_log:
             on_log("")
-            on_log(i18n.t("log.rev_item" if revert else "log.opt_item",
+            on_log(i18n.t("log.opt_item",
                           i18n.fld(item, "title"),
                           i18n.t("opt.admin_suffix") if item["admin"] else ""))
-        action = item["revert"] if revert else item["apply"]
+        action = item["apply"]
         try:
             ok, msg = action()
         except Exception as exc:
@@ -868,7 +715,7 @@ def _run_items(items, mode, on_log=None, on_status=None, stop_event=None,
             kind = "done"
             stats["done"].append(key)
             if on_log:
-                on_log(i18n.t("log.rev_ok" if revert else "log.opt_ok"))
+                on_log(i18n.t("log.opt_ok"))
         elif is_admin_required(msg):
             kind = "skipped"
             stats["skipped"].append(key)
@@ -896,14 +743,12 @@ def _run_items(items, mode, on_log=None, on_status=None, stop_event=None,
     return stats
 
 
-def result_summary(stats: dict, revert: bool = False) -> str:
+def result_summary(stats: dict) -> str:
     """
     Итоговая строка для журнала и диалога: счётчики + названия проблемных
     пунктов с причиной. Одни цифры («Пропущено: 1») ничего не объясняют.
-
-    revert=True — та же сводка, но с формулировками отката.
     """
-    text = i18n.t("log.rev_result" if revert else "log.opt_result",
+    text = i18n.t("log.opt_result",
                   len(stats.get("done", [])),
                   len(stats.get("skipped", [])),
                   len(stats.get("unsupported", [])),
@@ -933,8 +778,6 @@ def main(argv=None):
     parser.add_argument("--apply", metavar="KEYS",
                         help="применить пункты через запятую (например: telemetry,advertising)")
     parser.add_argument("--all", action="store_true", help="применить все пункты")
-    parser.add_argument("--revert-all", action="store_true",
-                        help="откатить все настройки к значениям Windows по умолчанию")
     args = parser.parse_args(argv)
 
     info = get_windows_info()
@@ -943,15 +786,9 @@ def main(argv=None):
 
     if args.list:
         for item in OPTIMIZATIONS:
-            revert = "откат есть" if item.get("revert") else "без отката"
-            print("  {:<16} [{}]  {}  ({})".format(
+            print("  {:<16} [{}]  {}".format(
                 item["key"], "админ" if item["admin"] else "польз.",
-                item["title"], revert))
-        return 0
-
-    if args.revert_all:
-        res = revert_optimizations()
-        print("\n" + result_summary(res, revert=True))
+                item["title"]))
         return 0
 
     if args.apply or args.all:

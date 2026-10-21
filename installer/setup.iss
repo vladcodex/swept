@@ -9,23 +9,23 @@
 ;    1. Поставить Inno Setup 6 (один раз):
 ;         winget install JRSoftware.InnoSetup
 ;    2. Скомпилировать скрипт (из корня проекта):
-;         "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\setup.iss
+;         "C:\Users\%USERNAME%\AppData\Local\Programs\Inno Setup 6\ISCC.exe" installer\setup.iss
 ;       или открыть installer\setup.iss в Inno Setup и нажать Build → Compile.
 ;
-;  Результат: dist\Swept-Setup-1.1.0.exe
+;  Результат: dist\Swept-Setup-1.1.1.exe
 ;
 ;  Важно: перед сборкой должен существовать dist\Swept.exe
 ;  (python build.py), иначе компиляция упадёт на шаге [Files].
 ; ============================================================================
 
 #define MyAppName "Swept"
-#define MyAppVersion "1.1.0"
+#define MyAppVersion "1.1.1"
 #define MyAppPublisher "vladcodex"
 #define MyAppURL "https://github.com/vladcodex/swept"
 #define MyAppExeName "Swept.exe"
 ; Идентификатор приложения: любая уникальная строка-GUID. Менять нельзя после
 ; первого выпуска — иначе Windows посчитает установщик другой программой.
-#define MyAppId "{7E2A9F31-4C6B-4D8E-A1F2-3B5C9D0E7A64}"
+#define MyAppId "7E2A9F31-4C6B-4D8E-A1F2-3B5C9D0E7A64"
 
 [Setup]
 AppId={#MyAppId}

@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11-0078D6.svg)](https://github.com/vladcodex/swept)
-[![Version](https://img.shields.io/badge/Version-1.1.0-brightgreen.svg)](https://github.com/vladcodex/swept/releases/latest)
+[![Version](https://img.shields.io/badge/Version-1.1.1-brightgreen.svg)](https://github.com/vladcodex/swept/releases/latest)
 [![UI](https://img.shields.io/badge/UI-%D0%A0%D0%A3%20%2F%20EN-lightgrey.svg)](https://github.com/vladcodex/swept)
 
 **One window to clean, install and tune Windows 10/11 — safely.**
@@ -14,13 +14,13 @@ Free and open source, with a dark bilingual interface (Русский / English)
 - 📦 **Install** — search and install any `winget` package, update everything at once, or
   pick individual apps from 7 curated sets (25 packages).
 - ⚡ **Optimize** — 12 safe Windows tweaks (telemetry, power plan, background apps, Game DVR,
-  widgets…) with one-click rollback to defaults.
+  widgets…) with a system restore point created before any change.
 
 No telemetry, no bundled offers, no background services — and every deleted file and
 changed setting is written to the log.
 
 **[⬇ Download the latest release](https://github.com/vladcodex/swept/releases/latest)** —
-either the portable `Swept.exe` (just run it) or `Swept-Setup-1.1.0.exe` (a normal Windows
+either the portable `Swept.exe` (just run it) or `Swept-Setup-1.1.1.exe` (a normal Windows
 installer with a Start Menu shortcut and a proper uninstaller).
 
 ![Swept — cleanup tab](docs/cleanup-en.png)
@@ -70,30 +70,30 @@ installer with a Start Menu shortcut and a proper uninstaller).
   archivers, media and codecs, chat and calls, handy utilities — 25 packages in total.
   A set is only a hint: **Choose** opens a list of its programs with checkboxes, so you
   install exactly what you need, not the whole bundle. Every package ID is verified
-  against the winget catalogue.
+  against the winget catalog.
 - **One-click Visual C++ Redistributable bundle** — all versions 2005–2022, x86 and x64, installed in sequence.
 
 ![Install tab](docs/install-presets-ru.png)
 
 ### ⚡ Optimize
 
-Twelve safe tweaks in two groups — eleven of them can be rolled back in one click:
+Twelve safe tweaks in two groups — before any change Swept creates a system restore point:
 
 - **Basic settings** — telemetry, advertising ID and suggestions, high-performance power plan, hibernation, background apps, Game DVR, startup delay, visual effects.
 - **Full debloat** — built-in promo/game apps (Weather, News, Maps, Skype, Solitaire, Candy Crush…), taskbar widgets and Copilot, web search suggestions, Windows Error Reporting.
 
-Every item states what it changes, whether it needs administrator rights, and how to revert it.
+Every item states what it changes and whether it needs administrator rights; before applying, Swept makes a system restore point.
 
 While the run is going, the **Progress** panel lists every selected item and marks it live:
 `⏳` being applied now (with a "3 of 8" counter and the item name), `✔` done, `⛔` skipped or
 unavailable — with the reason written right into the row — and `⚠` failed.
 
-**Roll back all** (`↺`) returns every tweak to the Windows default in one go: the registry
-values Swept wrote are deleted, so Windows falls back to its own settings; the power plan goes
-back to *Balanced* and hibernation is switched on again. The same live list shows the rollback
-step by step. Built-in apps removed by the debloat step cannot be restored automatically —
-the app says so and points to Microsoft Store. From the command line it is
-`python cleaner_optimize.py --revert-all`.
+**Restore point** (`🛡`) — Swept creates a Windows system restore point (PowerShell
+`Checkpoint-Computer`) **before** applying any tweak, so you can always roll back through
+the standard *Control Panel → Recovery* path. There is also a dedicated **Restore point**
+button to create one at any time, without applying optimizations. Built-in apps removed by
+the debloat step cannot be restored automatically — the app says so and points to Microsoft Store.
+From the command line: `python cleaner_optimize.py --apply telemetry`.
 
 ![Optimize tab](docs/optimize-ru.png)
 
@@ -184,7 +184,7 @@ winget install JRSoftware.InnoSetup
 "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\setup.iss
 ```
 
-The result is `dist\Swept-Setup-1.1.0.exe` — a bilingual (RU/EN) installer that asks for
+The result is `dist\Swept-Setup-1.1.1.exe` — a bilingual (RU/EN) installer that asks for
 administrator rights, installs to `Program Files`, and offers a desktop shortcut as an
 optional task. It also ships `README.md` and `LICENSE` next to the program.
 
@@ -209,7 +209,7 @@ python cleaner_installer.py --upgrade-all --dry-run
 :: reversible Windows tweaks
 python cleaner_optimize.py --list
 python cleaner_optimize.py --apply telemetry,advertising,search_suggest
-python cleaner_optimize.py --revert-all    :: restore every tweak to Windows default
+python cleaner_optimize.py --apply telemetry,advertising,search_suggest   :: apply selected tweaks
 ```
 
 ## Project layout
@@ -311,7 +311,7 @@ paid tier and no bundled offers.
 - 📦 **Установка** — поиск и установка любого пакета из `winget`, обновление всех программ
   сразу или выбор отдельных программ из 7 готовых наборов (25 пакетов).
 - ⚡ **Оптимизация** — 12 безопасных настроек Windows (телеметрия, схема электропитания,
-  фоновые приложения, Game DVR, виджеты…) с откатом всех изменений одной кнопкой.
+  фоновые приложения, Game DVR, виджеты…) с созданием точки восстановления перед изменениями.
 
 Никакой слежки, никаких встроенных предложений и фоновых служб — один `.exe`, а каждое
 удалённый файл и каждая изменённая настройка попадают в журнал.
@@ -348,18 +348,19 @@ HKEY_CURRENT_USER\Software\Swept
   программ (офис, просмотр и печать, браузеры, архиваторы, медиа, связь, утилиты — 25 пакетов).
   Набор только подсказывает: кнопка «Выбрать» открывает список программ с галочками, и
   ставится ровно то, что отмечено, а не весь набор целиком.
-- **Оптимизация** — 12 безопасных настроек (11 из них откатываются одной кнопкой):
+- **Оптимизация** — 12 безопасных настроек (перед изменениями создаётся точка восстановления):
   телеметрия, реклама, схема электропитания,
   гибернация, фоновые приложения, Game DVR, виджеты и Copilot, отчёты об ошибках и другое.
   Во время применения в панели «Ход выполнения» видно, какой пункт выполняется сейчас
   (со счётчиком «3 из 8») и чем закончился каждый: выполнено, пропущено, недоступно
   (с причиной прямо в строке) или ошибка.
-- **Откат** — кнопка «Откатить всё» (`↺`) возвращает все настройки к значениям Windows:
-  записанные в реестр значения удаляются, схема электропитания снова «Сбалансированная»,
-  гибернация включается обратно. Ход отката показывается в том же живом списке.
+- **Точка восстановления** — Swept создаёт точку восстановления Windows (PowerShell
+  `Checkpoint-Computer`) **перед** применением любых настроек, поэтому откатить изменения
+  можно штатными средствами — «Панель управления → Восстановление». Отдельная кнопка
+  «🛡 Точка восстановления» создаёт её в любой момент, без применения оптимизаций.
   Удалённые встроенные приложения сами не возвращаются — их ставит Microsoft Store,
   о чём программа честно пишет в журнале. Из командной строки:
-  `python cleaner_optimize.py --revert-all`.
+  `python cleaner_optimize.py --apply telemetry`.
 
 Безопасность: белый список путей, жёсткий чёрный список (`System32`, `WinSxS`, `Program Files`…),
 запрет на удаление системных файлов вроде `pagefile.sys`, ошибки не прерывают работу.
@@ -371,4 +372,4 @@ HKEY_CURRENT_USER\Software\Swept
 
 Запуск из исходников: `pip install -r requirements.txt`, затем `python cleaner_gui.py`.
 Сборка exe: `python build.py` → `dist\Swept.exe`.
-Установщик (Inno Setup): `ISCC.exe installer\setup.iss` → `dist\Swept-Setup-1.1.0.exe`.
+Установщик (Inno Setup): `ISCC.exe installer\setup.iss` → `dist\Swept-Setup-1.1.1.exe`.
