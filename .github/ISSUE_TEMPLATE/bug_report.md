@@ -1,29 +1,29 @@
 ---
-name: Баг / Bug report
-about: Сообщить об ошибке в работе Swept
+name: Bug report
+about: Report a problem with Swept
 title: "[BUG] "
 labels: bug
 ---
 
-**Что произошло**
-Опишите, что сделала программа (или что сделали вы) — своими словами.
+**What happened**
+Describe what the program did (or what you did) in your own words.
 
-**Ожидалось**
-Что должно было произойти.
+**Expected behaviour**
+What you expected to happen.
 
-**Произошло на самом деле**
-Что произошло вместо этого. Если есть текст ошибки — приведите его.
+**Actual behaviour**
+What happened instead. If there is an error message, paste it here.
 
-**Шаги воспроизведения**
-1. Открыл вкладку «...»
-2. Нажал «...»
+**Steps to reproduce**
+1. Opened the "..." tab
+2. Clicked "..."
 3. ...
 
-**Окружение**
-- Версия Windows: (например, Windows 11 24H2, сборка 26100)
-- Версия Swept: (см. шапку окна или «Сведения»)
-- Права администратора: да / нет
+**Environment**
+- Windows version: (e.g. Windows 11 24H2, build 26100)
+- Swept version: (see the window title or the "About" tab)
+- Running as administrator: yes / no
 
-**Журнал**
-Вкладка «Журнал» → скопируйте последние строки. Программа ничего не отправляет
-сама — журнал остаётся только у вас.
+**Log**
+"Log" tab → copy the last lines. The program never sends anything on its own —
+the log stays on your machine.

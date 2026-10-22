@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 r"""
-build.py — сборка Swept в один .exe (PyInstaller).
+build.py — builds Swept into a single .exe with PyInstaller.
 
-Всё пишется ТОЛЬКО внутри папки проекта:
-    dist\Swept.exe           — готовый файл
-    .build\work\             — временные файлы PyInstaller
-    .build\version_info.txt   — ресурс версии (генерируется)
+Everything is written INSIDE the project folder only:
+    dist\Swept.exe           — the finished file
+    .build\work\             — PyInstaller temporary files
+    .build\version_info.txt  — version resource (generated)
 
-Примеры:
-    python build.py                  # обычная сборка (exe просит права админа)
-    python build.py --no-admin       # без UAC-запроса
-    python build.py --onedir         # папка вместо одного файла (быстрее старт)
-    python build.py --console        # с консолью (для отладки)
-    python build.py --test           # пробная сборка без UAC в .build\test
+Examples:
+    python build.py                  # normal build (the exe asks for admin rights)
+    python build.py --no-admin       # no UAC prompt
+    python build.py --onedir         # folder instead of a single file (faster start)
+    python build.py --console        # keep the console window (debugging)
+    python build.py --test           # trial build without UAC into .build\test
 """
 
 from __future__ import annotations
@@ -45,7 +45,7 @@ VERSION_INFO_TEMPLATE = """VSVersionInfo(
     StringFileInfo([
       StringTable('040904B0', [
         StringStruct('CompanyName', 'Swept'),
-        StringStruct('FileDescription', 'Swept — безопасная очистка Windows 10/11'),
+        StringStruct('FileDescription', 'Swept — safe Windows 10/11 cleanup'),
         StringStruct('FileVersion', '{ver_str}'),
         StringStruct('InternalName', 'cleaner_gui'),
         StringStruct('LegalCopyright', 'Freeware'),
@@ -61,7 +61,7 @@ VERSION_INFO_TEMPLATE = """VSVersionInfo(
 
 
 def write_version_info(exe_name: str) -> str:
-    """Создаёт .build/version_info.txt и возвращает путь к нему."""
+    """Creates .build/version_info.txt and returns its path."""
     os.makedirs(BUILD_DIR, exist_ok=True)
     path = os.path.join(BUILD_DIR, "version_info.txt")
     ver_str = ".".join(str(part) for part in VERSION)
@@ -72,20 +72,20 @@ def write_version_info(exe_name: str) -> str:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Сборка Swept в exe")
+    parser = argparse.ArgumentParser(description="Build Swept into an exe")
     parser.add_argument("--no-admin", action="store_true",
-                        help="не запрашивать права администратора при запуске")
+                        help="do not request administrator rights on launch")
     parser.add_argument("--onedir", action="store_true",
-                        help="собрать папку вместо одного файла")
+                        help="build a folder instead of a single file")
     parser.add_argument("--console", action="store_true",
-                        help="показать консольное окно (отладка)")
+                        help="show the console window (debugging)")
     parser.add_argument("--test", action="store_true",
-                        help="пробная сборка без UAC в .build\\test")
-    parser.add_argument("--name", default=APP_NAME, help="имя exe")
+                        help="trial build without UAC into .build\\test")
+    parser.add_argument("--name", default=APP_NAME, help="exe name")
     args = parser.parse_args()
 
     if not os.path.isfile(ENTRY):
-        print("Не найден входной файл: " + ENTRY)
+        print("Entry point not found: " + ENTRY)
         return 1
 
     name = args.name
@@ -122,10 +122,10 @@ def main() -> int:
         cmd += ["--uac-admin"]
     cmd.append(ENTRY)
 
-    print("Сборка: " + " ".join(cmd))
+    print("Building: " + " ".join(cmd))
     result = subprocess.run(cmd, cwd=BASE)
     if result.returncode != 0:
-        print("\n[ОШИБКА] PyInstaller завершился с кодом {}".format(result.returncode))
+        print("\n[ERROR] PyInstaller exited with code {}".format(result.returncode))
         return result.returncode
 
     exe_path = os.path.join(dist, name + ".exe")
@@ -133,9 +133,9 @@ def main() -> int:
         exe_path = os.path.join(dist, name, name + ".exe")
     if os.path.isfile(exe_path):
         size_mb = os.path.getsize(exe_path) / (1024 * 1024)
-        print("\nГотово: {}  ({:.1f} МБ)".format(exe_path, size_mb))
+        print("\nDone: {}  ({:.1f} MB)".format(exe_path, size_mb))
         return 0
-    print("\n[ОШИБКА] exe не найден после сборки: " + exe_path)
+    print("\n[ERROR] exe not found after build: " + exe_path)
     return 1
 
 
