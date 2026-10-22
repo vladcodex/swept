@@ -19,7 +19,7 @@
 
 #define MyAppName "Swept"
 #define MyAppVersion "1.1.3"
-#define MyAppPublisher "vladcodex"
+#define MyAppPublisher "Vladvodex"
 #define MyAppURL "https://github.com/vladcodex/swept"
 #define MyAppExeName "Swept.exe"
 ; Application identifier: any unique GUID string. Must never change after the
