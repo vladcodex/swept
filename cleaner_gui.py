@@ -1199,15 +1199,15 @@ class CleanerApp(ctk.CTk):
                 messagebox.showinfo(i18n.t("dlg.restore_done"), msg[1])
 
     def _check_winget_worker(self):
-        """Фоновая проверка доступности winget (не блокирует интерфейс)."""
+        """Фоновая проверка готовности безопасного установщика (не блокирует UI)."""
         try:
-            available = inst.is_winget_available()
+            available = inst.is_installer_available()
         except Exception:
             available = False
         self.msg_queue.put(("winget_status", available))
 
     def _refresh_winget_label(self):
-        """Показывает статус winget на текущем языке (None — ещё проверяется)."""
+        """Показывает статус установщика на текущем языке (None — ещё проверяется)."""
         if self.winget_available is None:
             self.winget_label.configure(text=i18n.t("winget.checking"),
                                         text_color=COLOR_MUTED)

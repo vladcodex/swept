@@ -83,8 +83,8 @@ STRINGS = {
         "install.count": "— {} шт.",
         "install.found": "Найдено пакетов: {} — щёлкните нужную строку",
         "install.truncated": "— показаны {} из {} (уточните запрос)",
-        "install.upgrading_all_hint": "Обновление всех пакетов…\n"
-                                      "Подробный вывод winget — на вкладке «Журнал».",
+        "install.upgrading_all_hint": "Обновление пакетов…\n"
+                                      "Подробный вывод — на вкладке «Журнал».",
         "install.vc_hint": "Установка Visual C++ Redistributable…\n"
                            "Ход установки — на вкладке «Журнал».",
         "presets.title": "Популярные программы",
@@ -93,7 +93,7 @@ STRINGS = {
         "presets.choose": "Выбрать",
         "presets.dialog_title": "Набор «{}»",
         "presets.dialog_hint": "Отметьте программы, которые нужно установить. "
-                               "Уже установленные winget пропустит.",
+                               "Уже установленные будут пропущены.",
         "presets.select_all": "Отметить все",
         "presets.select_none": "Снять все",
         "presets.install_selected": "Установить ({})",
@@ -119,10 +119,10 @@ STRINGS = {
         "btn.upgrade": "⬆  Обновить",
         "btn.select": "Выбрать",
         "btn.install_vc": "⬇  Установить всё сразу",
-        "vc.label": "Visual C++ Redistributable (2005–2022, x86 и x64):",
-        "winget.checking": "Проверка winget…",
-        "winget.ok": "winget доступен",
-        "winget.missing": "⚠  winget не найден (нужен App Installer)",
+        "vc.label": "Visual C++ Redistributable (2015–2022, x86 и x64):",
+        "winget.checking": "Проверка установщика…",
+        "winget.ok": "Прямая установка доступна",
+        "winget.missing": "⚠  Нужны права администратора для установки",
         "pkg.not_selected": "Пакет не выбран — щёлкните строку",
         "pkg.selected": "Выбран: {}  —  {}",
         "pkg.manual": "Выбран (вручную): {}",
@@ -195,17 +195,20 @@ STRINGS = {
         "dlg.bad_number_text": "В списке {} пакетов. Введите номер от 1 до {}.",
         "dlg.empty_query_title": "Пустой запрос",
         "dlg.empty_query_text": "Введите название программы для поиска.",
-        "dlg.winget_title": "winget",
-        "dlg.winget_text": "Проверка доступности winget ещё не завершена или winget не найден.\n"
-                           "Нужен App Installer из Microsoft Store — подождите и попробуйте снова.",
+        "dlg.winget_title": "Установка",
+        "dlg.winget_text": "Безопасный установщик ещё не готов или нет прав администратора.\n"
+                           "Запустите Swept от имени администратора и попробуйте снова.",
         "dlg.install_pkg_text": "Установить '{}'?\n\n"
-                                "winget скачает и установит программу.",
+                                "Файл будет скачан с официального сайта, проверен по цифровой "
+                                "подписи и запущен в тихом режиме.",
         "dlg.upgrade_pkg_text": "Обновить '{}'?",
-        "dlg.upgrade_all_text": "Обновить ВСЕ установленные пакеты через winget?\n\n"
-                                "Это может занять несколько минут.",
-        "dlg.vc_text": "Установить ВСЕ Visual C++ Redistributable (2005–2022) "
+        "dlg.upgrade_all_text": "Проверить обновления?\n\n"
+                                "Лаунчеры обновляются автоматически при запуске — "
+                                "отдельное обновление не требуется.",
+        "dlg.vc_text": "Установить Visual C++ Redistributable (2015–2022) "
                        "для x86 и x64?\n\n"
-                       "Всего {} пакетов. winget скачает и установит их по очереди.\n"
+                       "Всего {} пакетов. Файлы скачиваются с сайта Microsoft, проверяются "
+                       "по цифровой подписи и ставятся по очереди.\n"
                        "Ход установки — на вкладке «Журнал».",
         "dlg.no_items_title": "Нет пунктов",
         "dlg.no_items_text": "Отметьте хотя бы один пункт оптимизации.",
@@ -372,8 +375,8 @@ STRINGS = {
         "install.count": "— {} found",
         "install.found": "Packages found: {} — click the one you need",
         "install.truncated": "— showing {} of {} (narrow your query)",
-        "install.upgrading_all_hint": "Updating all packages…\n"
-                                      "Detailed winget output is on the Log tab.",
+        "install.upgrading_all_hint": "Updating packages…\n"
+                                      "Detailed output is on the Log tab.",
         "install.vc_hint": "Installing Visual C++ Redistributable…\n"
                            "Progress is shown on the Log tab.",
         "presets.title": "Popular apps",
@@ -382,7 +385,7 @@ STRINGS = {
         "presets.choose": "Choose",
         "presets.dialog_title": "Set “{}”",
         "presets.dialog_hint": "Tick the apps you want to install. "
-                               "winget skips the ones already installed.",
+                               "Already installed ones are skipped.",
         "presets.select_all": "Select all",
         "presets.select_none": "Clear all",
         "presets.install_selected": "Install ({})",
@@ -408,10 +411,10 @@ STRINGS = {
         "btn.upgrade": "⬆  Upgrade",
         "btn.select": "Select",
         "btn.install_vc": "⬇  Install all at once",
-        "vc.label": "Visual C++ Redistributable (2005–2022, x86 and x64):",
-        "winget.checking": "Checking winget…",
-        "winget.ok": "winget is available",
-        "winget.missing": "⚠  winget not found (App Installer required)",
+        "vc.label": "Visual C++ Redistributable (2015–2022, x86 and x64):",
+        "winget.checking": "Checking installer…",
+        "winget.ok": "Direct install available",
+        "winget.missing": "⚠  Administrator rights are required for installation",
         "pkg.not_selected": "No package selected — click a row",
         "pkg.selected": "Selected: {}  —  {}",
         "pkg.manual": "Selected (manual): {}",
@@ -484,19 +487,21 @@ STRINGS = {
         "dlg.bad_number_text": "The list has {} packages. Enter a number from 1 to {}.",
         "dlg.empty_query_title": "Empty query",
         "dlg.empty_query_text": "Enter an app name to search for.",
-        "dlg.winget_title": "winget",
-        "dlg.winget_text": "The winget check has not finished yet, or winget is missing.\n"
-                           "App Installer from the Microsoft Store is required — "
-                           "please wait and try again.",
+        "dlg.winget_title": "Install",
+        "dlg.winget_text": "The secure installer is not ready yet, or administrator "
+                           "rights are missing.\nRun Swept as administrator and try again.",
         "dlg.install_pkg_text": "Install '{}'?\n\n"
-                                "winget will download and install the app.",
+                                "The file is downloaded from the official site, checked "
+                                "against its digital signature and run silently.",
         "dlg.upgrade_pkg_text": "Upgrade '{}'?",
-        "dlg.upgrade_all_text": "Upgrade ALL installed packages via winget?\n\n"
-                                "This may take several minutes.",
-        "dlg.vc_text": "Install ALL Visual C++ Redistributable packages (2005–2022) "
+        "dlg.upgrade_all_text": "Check for updates?\n\n"
+                                "Launchers update themselves on start — a separate "
+                                "upgrade is not required.",
+        "dlg.vc_text": "Install Visual C++ Redistributable (2015–2022) "
                        "for x86 and x64?\n\n"
-                       "{} packages in total. winget will download and install them "
-                       "one by one.\nProgress is shown on the Log tab.",
+                       "{} packages in total. Files are downloaded from Microsoft, "
+                       "verified against their signatures and installed one by one.\n"
+                       "Progress is shown on the Log tab.",
         "dlg.no_items_title": "No items",
         "dlg.no_items_text": "Select at least one optimization item.",
         "dlg.hibernate_title": "Hibernation",
