@@ -75,8 +75,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Build Swept into an exe")
     parser.add_argument("--no-admin", action="store_true",
                         help="do not request administrator rights on launch")
+    parser.add_argument("--onefile", action="store_true",
+                        help="build a single self-extracting exe instead of a folder "
+                             "(NOT recommended: unpacks to %%TEMP%% at launch and reliably "
+                             "trips AV false positives)")
     parser.add_argument("--onedir", action="store_true",
-                        help="build a folder instead of a single file")
+                        help="folder build (the default; faster startup, fewer AV flags)")
     parser.add_argument("--console", action="store_true",
                         help="show the console window (debugging)")
     parser.add_argument("--test", action="store_true",
@@ -103,7 +107,7 @@ def main() -> int:
     cmd = [
         sys.executable, "-m", "PyInstaller",
         "--noconfirm", "--clean",
-        "--onedir" if args.onedir else "--onefile",
+        "--onefile" if args.onefile else "--onedir",
         "--console" if args.console else "--windowed",
         "--name", name,
         "--distpath", dist,

@@ -21,19 +21,24 @@ python -m venv .venv
 .venv\Scripts\python cleaner_gui.py
 ```
 
-## Build a single .exe
+## Build the app
 
 ```bat
 .venv\Scripts\pip install pyinstaller
 .venv\Scripts\python build.py
 ```
 
-The result is `dist\Swept.exe` — one file, no console window, custom icon, version resource and a
-`requireAdministrator` manifest.
+The result is a folder `dist\Swept\` — `Swept.exe` plus its `_internal\` runtime, no console
+window, custom icon, version resource and a `requireAdministrator` manifest.
+
+This is an **onedir** (folder) build by design. A single-file "onefile" build unpacks itself
+into `%TEMP%\_MEIxxxxx` at launch and runs from there — a drop-and-execute pattern that
+reliably trips antivirus heuristics (e.g. Microsoft `Trojan.Win32/Wacast`) and gets the
+binary flagged as malware. Keep the default unless you truly need one file.
 
 ```bat
 python build.py --no-admin    :: do not request elevation
-python build.py --onedir      :: folder build, faster startup
+python build.py --onefile     :: single self-extracting exe (NOT recommended: AV false positives)
 python build.py --console     :: keep the console for debugging
 ```
 
@@ -42,9 +47,9 @@ The build environment must have `customtkinter` installed: the GUI imports it in
 
 ## Build the installer
 
-`dist\Swept.exe` is portable — it runs without being installed. For a classic Windows setup with a
-Start Menu shortcut and an entry in *Apps & Features*, compile the Inno Setup script (install
-Inno Setup 6 first from [jrsoftware.org](https://jrsoftware.org/isdl.php)):
+The Inno Setup installer bundles the whole `dist\Swept\` folder into *Program Files*, creating a
+Start Menu shortcut and an entry in *Apps & Features*. Compile it (install Inno Setup 6 first
+from [jrsoftware.org](https://jrsoftware.org/isdl.php)):
 
 ```bat
 "%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe" installer\setup.iss

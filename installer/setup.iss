@@ -70,7 +70,13 @@ Name: "en"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-Source: "..\dist\Swept.exe"; DestDir: "{app}"; Flags: ignoreversion
+; The application is built as an "onedir" bundle (build.py --onedir): Swept.exe
+; plus its _internal\ runtime live side by side in dist\Swept\. Copy the whole
+; tree into {app}. Onedir (instead of a single onefile exe) is deliberate: a
+; onefile exe unpacks itself into %TEMP%\_MEIxxxxx at launch, a drop-and-run
+; pattern that trips AV heuristics (e.g. Microsoft Wacast). Onedir has no such
+; self-extraction.
+Source: "..\dist\Swept\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\README.md";      DestDir: "{app}"; Flags: ignoreversion
 Source: "..\LICENSE";        DestDir: "{app}"; Flags: ignoreversion
 
