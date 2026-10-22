@@ -143,23 +143,6 @@ def _reg_write(hive, path, name, value, vtype=winreg.REG_DWORD):
         return False, str(exc)
 
 
-def _reg_delete(hive, path, name=None):
-    """Удаляет ключ/значение. Возвращает (ok, message) — отсутствие ключа не ошибка."""
-    try:
-        if name is None:
-            winreg.DeleteKey(hive, path)
-        else:
-            with winreg.OpenKey(hive, path, 0, winreg.KEY_SET_VALUE) as key:
-                winreg.DeleteValue(key, name)
-        return True, ""
-    except FileNotFoundError:
-        return True, ""
-    except PermissionError:
-        return False, _permission_message()
-    except Exception as exc:
-        return False, str(exc)
-
-
 def _write_many(steps):
     """
     Выполняет список шагов (каждый — callable -> (ok, msg)).
@@ -432,7 +415,9 @@ def _opt_wer():
     ])
 
 # Список оптимизаций для интерфейса:
-#   key, title, group, description, admin, apply (применяется безопасно и обратимо)
+#   key, title/title_en, desc/desc_en, group, admin, apply (безопасная настройка).
+# Обратимость обеспечивается точкой восстановления системы, которая создаётся
+# перед применением, — отдельного программного отката здесь нет.
 OPTIMIZATIONS = [
     {
         "key": "telemetry",
@@ -664,7 +649,6 @@ def apply_optimizations(keys, on_log=None, on_status=None,
                       on_log=on_log, on_status=on_status,
                       stop_event=stop_event, on_progress=on_progress,
                       on_item_start=on_item_start, on_item_done=on_item_done)
-
 
 
 def _run_items(items, on_log=None, on_status=None, stop_event=None,

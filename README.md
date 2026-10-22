@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11-0078D6.svg)](https://github.com/vladcodex/swept)
-[![Version](https://img.shields.io/badge/Version-1.1.1-brightgreen.svg)](https://github.com/vladcodex/swept/releases/latest)
+[![Version](https://img.shields.io/badge/Version-1.1.2-brightgreen.svg)](https://github.com/vladcodex/swept/releases/latest)
 [![UI](https://img.shields.io/badge/UI-%D0%A0%D0%A3%20%2F%20EN-lightgrey.svg)](https://github.com/vladcodex/swept)
 
 **One window to clean, install and tune Windows 10/11 — safely.**
@@ -20,7 +20,7 @@ No telemetry, no bundled offers, no background services — and every deleted fi
 changed setting is written to the log.
 
 **[⬇ Download the latest release](https://github.com/vladcodex/swept/releases/latest)** —
-either the portable `Swept.exe` (just run it) or `Swept-Setup-1.1.1.exe` (a normal Windows
+either the portable `Swept.exe` (just run it) or `Swept-Setup-1.1.2.exe` (a normal Windows
 installer with a Start Menu shortcut and a proper uninstaller).
 
 ![Swept — cleanup tab](docs/cleanup-en.png)
@@ -184,7 +184,7 @@ winget install JRSoftware.InnoSetup
 "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\setup.iss
 ```
 
-The result is `dist\Swept-Setup-1.1.1.exe` — a bilingual (RU/EN) installer that asks for
+The result is `dist\Swept-Setup-1.1.2.exe` — a bilingual (RU/EN) installer that asks for
 administrator rights, installs to `Program Files`, and offers a desktop shortcut as an
 optional task. It also ships `README.md` and `LICENSE` next to the program.
 
@@ -206,10 +206,9 @@ python cleaner_installer.py --search 7zip
 python cleaner_installer.py --install 7zip.7zip
 python cleaner_installer.py --upgrade-all --dry-run
 
-:: reversible Windows tweaks
+:: safe Windows tweaks (a restore point is created before applying)
 python cleaner_optimize.py --list
 python cleaner_optimize.py --apply telemetry,advertising,search_suggest
-python cleaner_optimize.py --apply telemetry,advertising,search_suggest   :: apply selected tweaks
 ```
 
 ## Project layout
@@ -372,4 +371,4 @@ HKEY_CURRENT_USER\Software\Swept
 
 Запуск из исходников: `pip install -r requirements.txt`, затем `python cleaner_gui.py`.
 Сборка exe: `python build.py` → `dist\Swept.exe`.
-Установщик (Inno Setup): `ISCC.exe installer\setup.iss` → `dist\Swept-Setup-1.1.1.exe`.
+Установщик (Inno Setup): `ISCC.exe installer\setup.iss` → `dist\Swept-Setup-1.1.2.exe`.

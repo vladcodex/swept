@@ -12,14 +12,14 @@
 ;         "C:\Users\%USERNAME%\AppData\Local\Programs\Inno Setup 6\ISCC.exe" installer\setup.iss
 ;       или открыть installer\setup.iss в Inno Setup и нажать Build → Compile.
 ;
-;  Результат: dist\Swept-Setup-1.1.1.exe
+;  Результат: dist\Swept-Setup-1.1.2.exe
 ;
 ;  Важно: перед сборкой должен существовать dist\Swept.exe
 ;  (python build.py), иначе компиляция упадёт на шаге [Files].
 ; ============================================================================
 
 #define MyAppName "Swept"
-#define MyAppVersion "1.1.1"
+#define MyAppVersion "1.1.2"
 #define MyAppPublisher "vladcodex"
 #define MyAppURL "https://github.com/vladcodex/swept"
 #define MyAppExeName "Swept.exe"

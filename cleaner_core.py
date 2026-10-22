@@ -16,12 +16,16 @@ cleaner_core.py — МОДУЛЬ ЛОГИКИ безопасной очистк�
     1. БЕЗОПАСНОСТЬ      — права администратора, белый/чёрный списки путей.
     2. УТИЛИТЫ           — форматирование размеров, нормализация путей.
     3. ОКРУЖЕНИЕ         — определение путей %TEMP%, %LOCALAPPDATA% и т.д.
+    8. БРАУЗЕРЫ          — проверка запущенных процессов, поиск профилей.
+                           (вынесены вверх: нужны и очистке, и интерфейсу)
     4. ЦЕЛИ ОЧИСТКИ      — построение безопасных путей по категориям.
     5. СКАНИРОВАНИЕ      — подсчёт файлов и объёма БЕЗ удаления.
     6. ОЧИСТКА           — удаление с перехватом блокировок (try-except).
     7. КОРЗИНА           — очистка через ctypes (SHEmptyRecycleBinW).
-    8. БРАУЗЕРЫ          — проверка запущенных процессов, поиск профилей.
     9. CLI               — запуск логики из командной строки.
+
+Номера разделов соответствуют заголовкам в файле, а не порядку строк:
+раздел 8 (браузеры) намеренно расположен перед разделом 4.
 
 Гарантии безопасности
 ---------------------
@@ -99,8 +103,7 @@ def _protected_exceptions() -> list:
     """Нормализованный список разрешённых подпапок внутри защищённых зон."""
     env = get_env_paths()
     windir = env.get("windir") or r"C:\Windows"
-    program_files_x86 = os.environ.get("ProgramFiles(x86)") or r"C:\Program Files (x86)"
-    steam_root = os.path.join(program_files_x86, "Steam")
+    steam_root = os.path.join(env["programfiles_x86"], "Steam")
 
     paths = [
         os.path.join(windir, "System32", "LogFiles"),
@@ -347,6 +350,8 @@ def get_env_paths() -> dict:
     windir = os.environ.get("SystemRoot") or r"C:\Windows"
     temp = os.environ.get("TEMP") or os.path.join(local, "Temp")
     programdata = os.environ.get("ProgramData") or r"C:\ProgramData"
+    program_files_x86 = (os.environ.get("ProgramFiles(x86)")
+                         or r"C:\Program Files (x86)")
     return {
         "userprofile": userprofile,
         "local": local,
@@ -354,6 +359,7 @@ def get_env_paths() -> dict:
         "windir": windir,
         "temp": temp,
         "programdata": programdata,
+        "programfiles_x86": program_files_x86,
     }
 
 
@@ -662,7 +668,9 @@ def get_jobs(key: str) -> list:
     # depotcache) не затрагиваются. Корневые папки сохраняются (без remove_root)
     # — очищается только их содержимое.
     elif key == "game_steam":
-        steam_root = r"C:\Program Files (x86)\Steam"
+        # Путь строится из переменной среды, а не хардкодится под диск C:
+        # (см. _protected_exceptions — белый список должен совпадать с ним).
+        steam_root = os.path.join(env["programfiles_x86"], "Steam")
         for sub in ("appcache", "cache", "logs", "tmp",
                     os.path.join("steamapps", "downloading")):
             jobs.append({"type": "dir",
