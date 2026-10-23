@@ -36,8 +36,48 @@ switch between them at any time.*
 
 ---
 
+## About Swept
+
+**Swept is a single-window maintenance toolkit for Windows 10/11.** Instead of five separate
+utilities — a cleaner, a downloader, a tweaker, a scheduler and a log viewer — you get one
+portable program with five tabs:
+
+| Tab | What it is for |
+|---|---|
+| **🧹 Cleanup** | Frees disk space: temp files, browser caches, Windows Update cache, Recycle Bin, logs, dumps and game-launcher junk across 15 categories. Always analyzes before deleting. |
+| **📦 Install** | A curated catalog of 24 popular programs plus 12 Visual C++ Redistributable packages, fetched from the vendors' own CDNs and verified by signature or pinned hash before anything runs. |
+| **⚡ Optimize** | 12 safe Windows tweaks (telemetry, power plan, background apps, Game DVR, debloat) with a system restore point created before any change. |
+| **⏰ Schedule** | Quiet automatic cleanup: daily or weekly, dry run first, restore point before deletion, optionally driven by a Windows Task Scheduler task that runs Swept headless in the background. |
+| **📋 Log** | The full history of every deleted file and changed setting, with reasons for everything that was skipped. |
+
+**How it works under the hood:**
+
+- Written in **Python** with a **CustomTkinter** dark interface, compiled to a self-contained
+  Windows executable — no Python or runtime needs to be installed.
+- **Two languages** (English and Russian), switched instantly in the window header and remembered
+  between runs, stored per user.
+- **Administrator rights are optional**: without them the system-level locations are skipped and
+  reported instead of failing silently.
+- **Settings live in the registry** (`HKCU\Software\Swept`), with a JSON file as a fallback on
+  locked-down systems.
+- The scheduled task runs the same executable in a **headless mode** (`Swept.exe --silent-clean`)
+  that performs the whole pipeline — restore point, dry run, cleanup — and writes
+  `swept_silent_clean.log` next to the binary.
+
+**Privacy:** no telemetry, no analytics, no bundled offers, no background services. The only
+network access is the HTTPS download you explicitly start from the Install tab, and every byte
+of it is verified before it runs.
+
+> **Not a virus.** The builds are not code-signed, so SmartScreen may warn about an unknown
+> publisher on first run — an Authenticode certificate costs hundreds of dollars a year and this
+> is a free, open-source project. The full source is public, every build is reproducible from it,
+> and the program only ever deletes files inside its own whitelisted categories.
+
+---
+
 ## Contents
 
+- [About Swept](#about-swept)
 - [What it does](#what-it-does)
 - [Safety model](#safety-model)
 - [Requirements](#requirements)
