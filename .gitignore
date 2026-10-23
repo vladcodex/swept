@@ -27,3 +27,8 @@ desktop.ini
 
 # Old drafts kept locally, not part of the project
 _archive/
+
+# Nuitka build artifacts
+dist-nuitka/
+nuitka-crash-report.xml
+_nuitka_trash/
