@@ -32,3 +32,8 @@ _archive/
 dist-nuitka/
 nuitka-crash-report.xml
 _nuitka_trash/
+
+# Nuitka build artifacts
+dist-nuitka/
+nuitka-crash-report.xml
+_nuitka_trash/
