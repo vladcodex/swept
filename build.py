@@ -26,7 +26,7 @@ import sys
 BASE = os.path.dirname(os.path.abspath(__file__))
 BUILD_DIR = os.path.join(BASE, ".build")
 APP_NAME = "Swept"
-VERSION = (1, 1, 3, 0)
+VERSION = (1, 2, 0, 0)
 ICON = os.path.join(BASE, "app.ico")
 ENTRY = os.path.join(BASE, "cleaner_gui.py")
 
@@ -51,13 +51,33 @@ VERSION_INFO_TEMPLATE = """VSVersionInfo(
         StringStruct('LegalCopyright', 'Freeware'),
         StringStruct('OriginalFilename', '{exe_name}.exe'),
         StringStruct('ProductName', 'Swept'),
-        StringStruct('ProductVersion', '{ver_str}')
+        StringStruct('ProductVersion', '{ver_str}'),
+        StringStruct('BuildID', '{build_id}')
       ])
     ]),
     VarFileInfo([VarStruct('Translation', [1049, 1200])])
   ]
 )
 """
+
+
+def git_build_id() -> str:
+    """Короткий хеш коммита и дата сборки — вшиваются в версию exe.
+
+    Полезно для трассировки: по файлу всегда видно, из какого коммита он собран.
+    """
+    import subprocess
+    commit = "unknown"
+    try:
+        out = subprocess.run(["git", "rev-parse", "--short", "HEAD"],
+                             capture_output=True, text=True, timeout=10,
+                             cwd=BASE)
+        if out.returncode == 0 and out.stdout.strip():
+            commit = out.stdout.strip()
+    except Exception:
+        pass
+    import datetime
+    return "git:{} {}".format(commit, datetime.date.today().isoformat())
 
 
 def write_version_info(exe_name: str) -> str:
@@ -67,7 +87,8 @@ def write_version_info(exe_name: str) -> str:
     ver_str = ".".join(str(part) for part in VERSION)
     with open(path, "w", encoding="utf-8") as handle:
         handle.write(VERSION_INFO_TEMPLATE.format(
-            filevers=VERSION, prodvers=VERSION, ver_str=ver_str, exe_name=exe_name))
+            filevers=VERSION, prodvers=VERSION, ver_str=ver_str, exe_name=exe_name,
+            build_id=git_build_id()))
     return path
 
 
