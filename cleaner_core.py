@@ -50,6 +50,7 @@ import platform
 import stat
 import subprocess
 import sys
+import time
 from ctypes import wintypes
 
 import cleaner_i18n as i18n
@@ -473,6 +474,52 @@ def get_running_browsers(keys=None) -> list:
         if is_browser_running(key, running):
             result.append(key)
     return result
+
+
+def close_browsers(keys=None) -> int:
+    """
+    Пытается корректно закрыть запущенные браузеры из списка `keys`.
+    Сначала посылает мягкий сигнал закрытия (WM_CLOSE, taskkill без /F),
+    а если процесс не завершился — принудительно (/F /T).
+    Возвращает количество браузеров, которые удалось закрыть.
+    """
+    if not IS_WINDOWS:
+        return 0
+    running = get_running_browsers(keys)
+    if not running:
+        return 0
+    closed = 0
+    taskkill = system_tool("taskkill.exe")
+    for key in running:
+        info = BROWSERS.get(key)
+        if not info:
+            continue
+        # 1) Мягкое закрытие — браузер может сохранить сессию/вкладки.
+        for proc in info.get("processes", []):
+            try:
+                subprocess.run(
+                    [taskkill, "/IM", proc, "/T"],
+                    capture_output=True, text=True, errors="ignore",
+                    creationflags=CREATE_NO_WINDOW,
+                )
+            except Exception:
+                pass
+        time.sleep(0.6)
+        # 2) Если не закрылся — принудительно завершаем дерево процессов.
+        if is_browser_running(key):
+            for proc in info.get("processes", []):
+                try:
+                    subprocess.run(
+                        [taskkill, "/IM", proc, "/F", "/T"],
+                        capture_output=True, text=True, errors="ignore",
+                        creationflags=CREATE_NO_WINDOW,
+                    )
+                except Exception:
+                    pass
+            time.sleep(0.6)
+        if not is_browser_running(key):
+            closed += 1
+    return closed
 
 
 def get_chromium_profiles(user_data_dir: str) -> list:

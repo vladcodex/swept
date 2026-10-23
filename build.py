@@ -132,8 +132,11 @@ def main() -> int:
         print("\n[ERROR] PyInstaller exited with code {}".format(result.returncode))
         return result.returncode
 
-    exe_path = os.path.join(dist, name + ".exe")
-    if args.onedir:
+    # onedir — режим по умолчанию (если не передан --onefile), поэтому exe
+    # лежит ВНУТРИ папки dist\<name>\, а не в корне dist.
+    if args.onefile:
+        exe_path = os.path.join(dist, name + ".exe")
+    else:
         exe_path = os.path.join(dist, name, name + ".exe")
     if os.path.isfile(exe_path):
         size_mb = os.path.getsize(exe_path) / (1024 * 1024)

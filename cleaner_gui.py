@@ -14,6 +14,10 @@ cleaner_gui.py — ГРАФИЧЕСКИЙ ИНТЕРФЕЙС (CustomTkinter) д�
       обновление всех пакетов.
     * Вкладка «Оптимизация»: безопасные настройки Windows по группам,
       живой ход выполнения, кнопка создания точки восстановления.
+    * Вкладка «Расписание»: тихая автоматическая очистка по расписанию
+      (ежедневно/еженедельно) с авто-созданием точки восстановления перед
+      удалением и опциональным сухим прогоном; есть режим --silent-clean
+      для автономной задачи Windows (schtasks).
     * Вкладка «Журнал»: текстовое поле с путями удаляемых файлов и итогами.
     * Индикатор прав администратора.
 
@@ -24,8 +28,12 @@ cleaner_gui.py — ГРАФИЧЕСКИЙ ИНТЕРФЕЙС (CustomTkinter) д�
 from __future__ import annotations
 
 import copy
+import datetime
+import os
 import queue
+import subprocess
 import sys
+import tempfile
 import threading
 import tkinter as tk
 from tkinter import messagebox
@@ -262,6 +270,24 @@ class CleanerApp(ctk.CTk):
         self._lang_label = None       # подпись «Язык» рядом со списком
         self._total_text = None       # текст «Освобождено…» с учётом режима
 
+        # --- Состояние планировщика «тихой очистки по расписанию» ---
+        self.schedule_stop_event = threading.Event()
+        self.schedule_reschedule = threading.Event()
+        self._scheduler_thread = None
+        self.sched_vars = {}          # категории для плановой очистки (key -> BooleanVar)
+        self.sched_status_label = None
+        self.sched_enable_var = None
+        self.sched_freq_var = None
+        self.sched_weekday_var = None
+        self.sched_weekday_menu = None
+        self.sched_hour_var = None
+        self.sched_minute_var = None
+        self.sched_restore_var = None
+        self.sched_dry_var = None
+        self._freq_by_label = {}
+        self._weekday_labels = []
+        self._weekday_by_label = {}
+
         # --- Построение интерфейса ---
         self._build_header()
         self._build_tabs()
@@ -272,6 +298,10 @@ class CleanerApp(ctk.CTk):
 
         # При закрытии окна останавливаем фоновые операции и завершаем работу.
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+        # Если расписание тихой очистки включено — запускаем фоновый планировщик.
+        if self._schedule_enabled():
+            self._maybe_start_scheduler()
 
     # ============================================================== ШАПКА
     def _build_header(self):
@@ -464,16 +494,19 @@ class CleanerApp(ctk.CTk):
         self.tab_install = self.tabs.add(i18n.t("tab.install"))
         self.tab_opt = self.tabs.add(i18n.t("tab.optimize"))
         self.tab_log = self.tabs.add(i18n.t("tab.log"))
+        self.tab_schedule = self.tabs.add(i18n.t("tab.schedule"))
 
         # Имена вкладок нужны для восстановления активной вкладки
         # после смены языка (имена меняются вместе с языком).
         self._tab_names = [i18n.t("tab.clean"), i18n.t("tab.install"),
-                           i18n.t("tab.optimize"), i18n.t("tab.log")]
+                           i18n.t("tab.optimize"), i18n.t("tab.log"),
+                           i18n.t("tab.schedule")]
 
         self._build_clean_tab(self.tab_clean)
         self._build_install_tab(self.tab_install)
         self._build_optimize_tab(self.tab_opt)
         self._build_log_tab(self.tab_log)
+        self._build_schedule_tab(self.tab_schedule)
 
     def _on_tab_change(self):
         """Запоминает активную вкладку (нужно при смене языка)."""
@@ -1197,6 +1230,12 @@ class CleanerApp(ctk.CTk):
             self.opt_status.configure(text=i18n.t("status.done"))
             if msg[1]:
                 messagebox.showinfo(i18n.t("dlg.restore_done"), msg[1])
+        elif kind == "sched_running":
+            # Тихая плановая очистка: как _set_running, но БЕЗ всплывающих окон.
+            self._set_running(msg[1])
+        elif kind == "sched_status":
+            if self.sched_status_label is not None:
+                self.sched_status_label.configure(text=msg[1])
 
     def _check_winget_worker(self):
         """Фоновая проверка готовности безопасного установщика (не блокирует UI)."""
@@ -1227,6 +1266,11 @@ class CleanerApp(ctk.CTk):
         self._closing = True
         if self.running:
             self.stop_event.set()
+        # Останавливаем фоновый планировщик тихой очистки.
+        try:
+            self.schedule_stop_event.set()
+        except Exception:
+            pass
         self.destroy()
 
     # ------------------------------------------- список найденных пакетов
@@ -1478,6 +1522,22 @@ class CleanerApp(ctk.CTk):
             messagebox.showinfo(i18n.t("dlg.no_categories_title"),
                                 i18n.t("dlg.no_categories_text"))
             return
+        # Если выбраны категории браузеров и они сейчас запущены — спрашиваем,
+        # закрыть их перед очисткой (иначе их кэш/куки заняты и будут пропущены).
+        browser_keys = [key for key in keys if key in core.BROWSER_KEYS]
+        if browser_keys:
+            running = core.get_running_browsers(browser_keys)
+            if running:
+                names = ", ".join(i18n.fld(core.BROWSERS[k], "title") for k in running)
+                if messagebox.askyesno(
+                        i18n.t("dlg.browser_running_title"),
+                        i18n.t("dlg.browser_running_text", names)):
+                    self._append_log(i18n.t("log.browsers_closing", names))
+                    closed = core.close_browsers(running)
+                    if closed:
+                        self._append_log(i18n.t("log.browsers_closed", names))
+                    else:
+                        self._append_log(i18n.t("log.browsers_close_failed", names))
         dry_run = self.scan_only_var.get()
         if not dry_run:
             if not messagebox.askyesno(
@@ -1925,12 +1985,616 @@ class CleanerApp(ctk.CTk):
             log(i18n.t("log.error") + repr(exc))
             self.msg_queue.put(("opt_done", i18n.t("log.error_text", exc)))
 
+    # ============================ ВКЛАДКА «РАСПИСАНИЕ» (тихая очистка)
+    def _build_schedule_tab(self, parent):
+        """Вкладка «Расписание»: тихая автоматическая очистка по расписанию."""
+        parent.grid_columnconfigure(0, weight=1)
+        parent.grid_rowconfigure(0, weight=1)
+
+        scroll = ctk.CTkScrollableFrame(parent, fg_color=COLOR_CARD_2,
+                                        corner_radius=10)
+        scroll.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+
+        ctk.CTkLabel(scroll, text=i18n.t("sched.title"),
+                     font=ctk.CTkFont(size=15, weight="bold"),
+                     text_color=COLOR_TEXT).pack(anchor="w", padx=6, pady=(4, 6))
+        ctk.CTkLabel(scroll, text=i18n.t("sched.subtitle"),
+                     font=ctk.CTkFont(size=11), text_color=COLOR_MUTED,
+                     justify="left", anchor="w", wraplength=720
+                     ).pack(anchor="w", padx=6, pady=(0, 8))
+
+        # --- Включение планировщика ---
+        self.sched_enable_var = tk.BooleanVar(value=self._schedule_enabled())
+        ctk.CTkSwitch(scroll, text=i18n.t("sched.enable"),
+                      variable=self.sched_enable_var,
+                      font=ctk.CTkFont(size=13), text_color=COLOR_TEXT,
+                      progress_color=COLOR_ACCENT,
+                      command=self._on_schedule_enabled
+                      ).pack(anchor="w", padx=6, pady=(4, 10))
+
+        # --- Карточка настроек ---
+        cfg = ctk.CTkFrame(scroll, fg_color=COLOR_CARD, corner_radius=10)
+        cfg.pack(fill="x", padx=4, pady=6)
+        cfg.grid_columnconfigure(1, weight=1)
+
+        # Частота
+        ctk.CTkLabel(cfg, text=i18n.t("sched.freq"),
+                     font=ctk.CTkFont(size=12), text_color=COLOR_TEXT
+                     ).grid(row=0, column=0, sticky="w", padx=10, pady=6)
+        self._freq_by_label = {i18n.t("sched.daily"): "daily",
+                               i18n.t("sched.weekly"): "weekly"}
+        self.sched_freq_var = tk.StringVar(
+            value=i18n.t("sched." + self._schedule_setting("Freq", "daily")))
+        freq = ctk.CTkSegmentedButton(cfg, values=list(self._freq_by_label.keys()),
+                                      variable=self.sched_freq_var,
+                                      command=self._on_schedule_freq_changed)
+        freq.grid(row=0, column=1, sticky="w", padx=10, pady=6)
+
+        # Время
+        ctk.CTkLabel(cfg, text=i18n.t("sched.time"),
+                     font=ctk.CTkFont(size=12), text_color=COLOR_TEXT
+                     ).grid(row=1, column=0, sticky="w", padx=10, pady=6)
+        time_box = ctk.CTkFrame(cfg, fg_color="transparent")
+        time_box.grid(row=1, column=1, sticky="w", padx=10, pady=6)
+        hours = ["{:02d}".format(h) for h in range(24)]
+        minutes = ["00", "15", "30", "45"]
+        self.sched_hour_var = tk.StringVar(
+            value=self._schedule_setting("Hour", "3").zfill(2))
+        self.sched_minute_var = tk.StringVar(
+            value=self._schedule_setting("Minute", "0").zfill(2))
+        ctk.CTkOptionMenu(time_box, values=hours, variable=self.sched_hour_var,
+                          width=70,
+                          command=lambda *_: self._on_schedule_setting_changed()
+                          ).pack(side="left")
+        ctk.CTkLabel(time_box, text=":", text_color=COLOR_TEXT
+                     ).pack(side="left", padx=2)
+        ctk.CTkOptionMenu(time_box, values=minutes, variable=self.sched_minute_var,
+                          width=70,
+                          command=lambda *_: self._on_schedule_setting_changed()
+                          ).pack(side="left")
+
+        # День недели (только для еженедельно)
+        ctk.CTkLabel(cfg, text=i18n.t("sched.weekday"),
+                     font=ctk.CTkFont(size=12), text_color=COLOR_TEXT
+                     ).grid(row=2, column=0, sticky="w", padx=10, pady=6)
+        self._weekday_labels = [i18n.t("sched.mon"), i18n.t("sched.tue"),
+                                i18n.t("sched.wed"), i18n.t("sched.thu"),
+                                i18n.t("sched.fri"), i18n.t("sched.sat"),
+                                i18n.t("sched.sun")]
+        self._weekday_by_label = {lab: i for i, lab in enumerate(self._weekday_labels)}
+        wd_index = int(self._schedule_setting("Weekday", "6"))
+        self.sched_weekday_var = tk.StringVar(value=self._weekday_labels[wd_index])
+        self.sched_weekday_menu = ctk.CTkOptionMenu(
+            cfg, values=self._weekday_labels, variable=self.sched_weekday_var,
+            width=120, command=lambda *_: self._on_schedule_setting_changed())
+        self.sched_weekday_menu.grid(row=2, column=1, sticky="w", padx=10, pady=6)
+
+        # Переключатели: точка восстановления и сухой прогон
+        self.sched_restore_var = tk.BooleanVar(
+            value=self._schedule_setting("Restore", "1") == "1")
+        ctk.CTkSwitch(cfg, text=i18n.t("sched.restore"),
+                      variable=self.sched_restore_var,
+                      font=ctk.CTkFont(size=12), text_color=COLOR_TEXT,
+                      progress_color=COLOR_ACCENT,
+                      command=lambda: self._on_schedule_setting_changed()
+                      ).grid(row=3, column=0, columnspan=2, sticky="w",
+                             padx=10, pady=4)
+        self.sched_dry_var = tk.BooleanVar(
+            value=self._schedule_setting("Dry", "0") == "1")
+        ctk.CTkSwitch(cfg, text=i18n.t("sched.dry"), variable=self.sched_dry_var,
+                      font=ctk.CTkFont(size=12), text_color=COLOR_TEXT,
+                      progress_color=COLOR_ACCENT,
+                      command=lambda: self._on_schedule_setting_changed()
+                      ).grid(row=4, column=0, columnspan=2, sticky="w",
+                             padx=10, pady=(4, 8))
+
+        # --- Категории ---
+        cat_card = ctk.CTkFrame(scroll, fg_color=COLOR_CARD, corner_radius=10)
+        cat_card.pack(fill="x", padx=4, pady=(4, 6))
+        ctk.CTkLabel(cat_card, text=i18n.t("sched.categories"),
+                     font=ctk.CTkFont(size=13, weight="bold"),
+                     text_color=COLOR_TEXT
+                     ).pack(anchor="w", padx=10, pady=(8, 4))
+
+        saved = (self._schedule_setting("Categories", "") or "").split(",")
+        saved_set = set(s for s in saved if s)
+        self.sched_vars = {}
+        groups = {}
+        for cat in core.CATEGORIES:
+            groups.setdefault(cat["group"], []).append(cat)
+        for group_key, cats in groups.items():
+            ctk.CTkLabel(cat_card, text=core.group_title(group_key).upper(),
+                         font=ctk.CTkFont(size=10, weight="bold"),
+                         text_color=COLOR_ACCENT
+                         ).pack(anchor="w", padx=12, pady=(8, 2))
+            for cat in cats:
+                default = (cat["key"] in saved_set) if saved_set else True
+                var = tk.BooleanVar(value=default)
+                self.sched_vars[cat["key"]] = var
+                ctk.CTkCheckBox(cat_card,
+                                text="{} {}".format(cat["icon"],
+                                                    i18n.fld(cat, "title")),
+                                variable=var, font=ctk.CTkFont(size=12),
+                                text_color=COLOR_TEXT, checkbox_width=18,
+                                checkbox_height=18, fg_color=COLOR_ACCENT,
+                                hover_color=COLOR_ACCENT_HOVER,
+                                command=self._on_sched_cat_toggle
+                                ).pack(anchor="w", padx=14, pady=2)
+
+        cat_btns = ctk.CTkFrame(cat_card, fg_color="transparent")
+        cat_btns.pack(fill="x", padx=10, pady=(6, 8))
+        ctk.CTkButton(cat_btns, text=i18n.t("sched.select_all"), width=120,
+                      height=28, fg_color=COLOR_CARD, hover_color=COLOR_ACCENT,
+                      command=lambda: self._set_sched_all(True)
+                      ).pack(side="left")
+        ctk.CTkButton(cat_btns, text=i18n.t("sched.clear_all"), width=120,
+                      height=28, fg_color=COLOR_CARD, hover_color=COLOR_ACCENT,
+                      command=lambda: self._set_sched_all(False)
+                      ).pack(side="left", padx=8)
+
+        # --- Кнопки действий ---
+        act = ctk.CTkFrame(scroll, fg_color=COLOR_CARD, corner_radius=10)
+        act.pack(fill="x", padx=4, pady=(4, 6))
+        action_btns = ctk.CTkFrame(act, fg_color="transparent")
+        action_btns.pack(fill="x", padx=10, pady=10)
+        ctk.CTkButton(action_btns, text=i18n.t("sched.run_now"), width=140,
+                      height=34, font=ctk.CTkFont(size=12, weight="bold"),
+                      fg_color=COLOR_GREEN, hover_color=COLOR_GREEN_HOVER,
+                      command=self._run_scheduled_clean
+                      ).pack(side="left", padx=(0, 8))
+        ctk.CTkButton(action_btns, text=i18n.t("sched.save"), width=140,
+                      height=34, font=ctk.CTkFont(size=12, weight="bold"),
+                      fg_color=COLOR_ACCENT, hover_color=COLOR_ACCENT_HOVER,
+                      command=self._persist_schedule
+                      ).pack(side="left", padx=(0, 8))
+
+        # Вторая строка: регистрация/удаление автономной задачи Windows.
+        task_btns = ctk.CTkFrame(act, fg_color="transparent")
+        task_btns.pack(fill="x", padx=10, pady=(0, 10))
+        ctk.CTkButton(task_btns, text=i18n.t("sched.register_task"), width=210,
+                      height=34, font=ctk.CTkFont(size=12),
+                      fg_color=COLOR_CARD, hover_color=COLOR_ACCENT,
+                      command=self._on_register_task
+                      ).pack(side="left", padx=(0, 8))
+        ctk.CTkButton(task_btns, text=i18n.t("sched.unregister_task"), width=210,
+                      height=34, font=ctk.CTkFont(size=12),
+                      fg_color=COLOR_CARD, hover_color=COLOR_RED,
+                      command=self._on_unregister_task
+                      ).pack(side="left")
+        ctk.CTkLabel(act, text=i18n.t("sched.register_hint"),
+                     font=ctk.CTkFont(size=10), text_color=COLOR_MUTED,
+                     justify="left", anchor="w", wraplength=720
+                     ).pack(anchor="w", padx=10, pady=(0, 10))
+
+        # --- Статус следующего запуска ---
+        self.sched_status_label = ctk.CTkLabel(
+            scroll, text="", font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=COLOR_ACCENT)
+        self.sched_status_label.pack(anchor="w", padx=6, pady=(2, 10))
+
+        # Первичное состояние контролов и статуса.
+        self._on_schedule_freq_changed()
+        self._update_schedule_status()
+
+    # --------------------------------------------------- хранилище расписания
+    def _schedule_setting(self, name, default=""):
+        return settings.get_settings().get("Schedule." + name, default)
+
+    def _save_schedule_setting(self, name, value):
+        settings.get_settings().set("Schedule." + name, value)
+
+    def _schedule_enabled(self):
+        return self._schedule_setting("Enabled", "0") == "1"
+
+    # ----------------------------------------------------- обработчики контролов
+    def _on_schedule_enabled(self, *_):
+        enabled = self.sched_enable_var.get()
+        self._save_schedule_setting("Enabled", "1" if enabled else "0")
+        self._update_schedule_status()
+        self.schedule_reschedule.set()
+        if enabled:
+            self._log(i18n.t("sched.enabled"))
+            self._maybe_start_scheduler()
+        else:
+            self._log(i18n.t("sched.disabled"))
+
+    def _on_schedule_freq_changed(self, *_):
+        """Переключает доступность выбора дня недели (только для еженедельно)."""
+        is_weekly = self._freq_by_label.get(self.sched_freq_var.get()) == "weekly"
+        try:
+            self.sched_weekday_menu.configure(
+                state="normal" if is_weekly else "disabled")
+        except Exception:
+            pass
+        self._persist_schedule()
+
+    def _on_schedule_setting_changed(self, *_):
+        self._persist_schedule()
+
+    def _on_sched_cat_toggle(self):
+        self._persist_schedule()
+
+    def _set_sched_all(self, value):
+        for var in self.sched_vars.values():
+            var.set(value)
+        self._persist_schedule()
+
+    def _persist_schedule(self):
+        """Сохраняет все настройки расписания в реестр/JSON."""
+        try:
+            self._save_schedule_setting(
+                "Enabled", "1" if self.sched_enable_var.get() else "0")
+            self._save_schedule_setting(
+                "Freq", self._freq_by_label.get(self.sched_freq_var.get(), "daily"))
+            self._save_schedule_setting(
+                "Weekday", str(self._weekday_by_label.get(
+                    self.sched_weekday_var.get(), 6)))
+            self._save_schedule_setting("Hour", self.sched_hour_var.get())
+            self._save_schedule_setting("Minute", self.sched_minute_var.get())
+            self._save_schedule_setting(
+                "Restore", "1" if self.sched_restore_var.get() else "0")
+            self._save_schedule_setting(
+                "Dry", "1" if self.sched_dry_var.get() else "0")
+            keys = [k for k, v in self.sched_vars.items() if v.get()]
+            self._save_schedule_setting("Categories", ",".join(keys))
+            self.schedule_reschedule.set()
+            self._update_schedule_status()
+        except Exception as exc:
+            self._log(i18n.t("log.error") + repr(exc))
+
+    def _update_schedule_status(self):
+        if self.sched_status_label is None:
+            return
+        when = self._next_run_dt()
+        if when is None:
+            self.sched_status_label.configure(text=i18n.t("sched.next_off"))
+        else:
+            self.sched_status_label.configure(
+                text=i18n.t("sched.next", when.strftime("%Y-%m-%d %H:%M")))
+
+    # ----------------------------------------------------------- логика планировщика
+    def _next_run_dt(self):
+        """Возвращает datetime следующего запуска или None, если выключено."""
+        if not self._schedule_enabled():
+            return None
+        freq = self._schedule_setting("Freq", "daily")
+        try:
+            hour = int(self._schedule_setting("Hour", "3"))
+            minute = int(self._schedule_setting("Minute", "0"))
+        except ValueError:
+            hour, minute = 3, 0
+        now = datetime.datetime.now()
+        today = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if freq == "weekly":
+            try:
+                wd = int(self._schedule_setting("Weekday", "6"))
+            except ValueError:
+                wd = 6
+            days_ahead = (wd - now.weekday()) % 7
+            cand = today + datetime.timedelta(days=days_ahead)
+            if cand <= now:
+                cand += datetime.timedelta(days=7)
+            return cand
+        cand = today
+        if cand <= now:
+            cand += datetime.timedelta(days=1)
+        return cand
+
+    def _maybe_start_scheduler(self):
+        if self._scheduler_thread is None or not self._scheduler_thread.is_alive():
+            self.schedule_stop_event.clear()
+            self._scheduler_thread = threading.Thread(
+                target=self._scheduler_loop, daemon=True)
+            self._scheduler_thread.start()
+
+    def _scheduler_loop(self):
+        """Фоновый цикл: ждёт наступления времени и запускает тихую очистку."""
+        while not self.schedule_stop_event.is_set():
+            when = self._next_run_dt()
+            if when is None:
+                # Расписание выключено — ждём, пока не включат (reschedule разбудит).
+                self.schedule_stop_event.wait(5)
+                continue
+            delay = (when - datetime.datetime.now()).total_seconds()
+            if delay <= 0:
+                delay = 0.5
+            # Спим кусками по ~1с, реагируя на стоп или изменение расписания.
+            slept = 0.0
+            while (slept < delay and not self.schedule_stop_event.is_set()
+                   and not self.schedule_reschedule.is_set()):
+                chunk = min(1.0, delay - slept)
+                self.schedule_stop_event.wait(chunk)
+                slept += chunk
+            if self.schedule_stop_event.is_set():
+                break
+            if self.schedule_reschedule.is_set():
+                self.schedule_reschedule.clear()
+                continue
+            # Время пришло — запускаем, если ничего другого не выполняется.
+            if not self.running and self._schedule_enabled():
+                self._run_scheduled_clean()
+
+    def _run_scheduled_clean(self):
+        """Запускает тихую очистку (кнопка «Запустить сейчас» или планировщик)."""
+        if self.running:
+            self._log(i18n.t("sched.busy"))
+            return
+        thread = threading.Thread(target=self._scheduled_clean_worker,
+                                  daemon=True)
+        thread.start()
+
+    def _scheduled_clean_worker(self):
+        """Фоновый воркер тихой очистки: точка восстановления + очистка."""
+        def log(text):
+            self.msg_queue.put(("log", text))
+        def status(text):
+            self.msg_queue.put(("status", text))
+        def on_progress(done, total):
+            self.msg_queue.put(("progress", done, total))
+        try:
+            self.msg_queue.put(("sched_running", True))
+            log("")
+            log(i18n.t("sched.header"))
+            keys = [k for k, v in self.sched_vars.items() if v.get()]
+            run_scheduled_cleanup(
+                keys,
+                make_restore=self.sched_restore_var.get(),
+                dry_run_first=self.sched_dry_var.get(),
+                on_log=log, on_status=status, on_progress=on_progress,
+                stop_event=self.stop_event)
+            log(i18n.t("sched.finished"))
+        except Exception as exc:
+            log(i18n.t("log.error") + repr(exc))
+        finally:
+            self.msg_queue.put(("progress_reset",))
+            self.msg_queue.put(("sched_running", False))
+
+    # --------------------------------------- регистрация автономной задачи Windows
+    def _on_register_task(self):
+        """Регистрирует задачу планировщика Windows (PowerShell Register-ScheduledTask).
+
+        PowerShell принимает исполняемый файл и аргументы РАЗДЕЛЬНО
+        (-Execute/-Argument), поэтому путь с пробелами («win11 cleaner»)
+        не ломает разбор аргументов (в отличие от schtasks /TR).
+        """
+        if self.running:
+            return
+        try:
+            if getattr(sys, "frozen", False):
+                execute = sys.executable
+                argument = "--silent-clean"
+            else:
+                execute = sys.executable
+                argument = '"{}" --silent-clean'.format(os.path.abspath(__file__))
+            freq = self._schedule_setting("Freq", "daily")
+            hour = self._schedule_setting("Hour", "3").zfill(2)
+            minute = self._schedule_setting("Minute", "0").zfill(2)
+            at = "{}:{}".format(hour, minute)
+            if freq == "weekly":
+                wd = int(self._schedule_setting("Weekday", "6"))
+                days = ["Monday", "Tuesday", "Wednesday", "Thursday",
+                        "Friday", "Saturday", "Sunday"]
+                trigger = ('New-ScheduledTaskTrigger -Weekly -DaysOfWeek {} -At "{}"'
+                           .format(days[wd], at))
+            else:
+                trigger = 'New-ScheduledTaskTrigger -Daily -At "{}"'.format(at)
+            ps = (
+                '$action = New-ScheduledTaskAction -Execute {exe} -Argument {arg}\n'
+                '$trigger = {trig}\n'
+                'Register-ScheduledTask -TaskName {name} -Action $action '
+                '-Trigger $trigger -RunLevel Highest -Force | Out-Null\n'
+            ).format(exe=_ps_quote(execute), arg=_ps_quote(argument),
+                     trig=trigger, name=_ps_quote(SCHED_TASK_NAME))
+            code, out = _run_task_ps1(ps)
+            if code == 0:
+                msg = i18n.t("sched.registered", SCHED_TASK_NAME)
+                self._log(msg)
+                messagebox.showinfo(i18n.t("dlg.ok"), msg)
+            else:
+                msg = i18n.t("sched.register_failed", (out or "").strip()[:300])
+                self._log(msg)
+                messagebox.showwarning(i18n.t("dlg.no_admin_title"), msg)
+        except Exception as exc:
+            self._log(i18n.t("log.error") + repr(exc))
+
+    def _on_unregister_task(self):
+        """Удаляет задачу планировщика Windows (PowerShell Unregister-ScheduledTask).
+
+        Симметрично регистрации: та же константа имени задачи, тот же механизм,
+        поэтому гарантированно удаляет именно ту задачу, что создаёт регистрация.
+        """
+        if self.running:
+            return
+        try:
+            ps = 'Unregister-ScheduledTask -TaskName {} -Confirm:$false\n'.format(
+                _ps_quote(SCHED_TASK_NAME))
+            code, out = _run_task_ps1(ps)
+            text = (out or "").strip().lower()
+            # «Задачи и так нет» — для пользователя это успех (уже удалена).
+            gone = any(s in text for s in (
+                "does not exist", "не существует", "не найдена",
+                "cannot find", "could not find", "no instance", "no task"))
+            if code == 0 or gone:
+                msg = i18n.t("sched.unregistered", SCHED_TASK_NAME)
+                self._log(msg)
+                messagebox.showinfo(i18n.t("dlg.ok"), msg)
+            else:
+                msg = i18n.t("sched.unregister_failed", (out or "").strip()[:300])
+                self._log(msg)
+                messagebox.showwarning(i18n.t("dlg.no_admin_title"), msg)
+        except Exception as exc:
+            self._log(i18n.t("log.error") + repr(exc))
+
 
 # =============================================================================
 # ТОЧКА ВХОДА
 # =============================================================================
 
+# =============================================================================
+# ТИХАЯ ОЧИСТКА ПО РАСПИСАНИЮ — ОРКЕСТРАЦИЯ (общий код для GUI и CLI)
+# =============================================================================
+def run_scheduled_cleanup(keys, *, make_restore=True, dry_run_first=False,
+                          on_log=None, on_status=None, on_progress=None,
+                          stop_event=None):
+    """Выполняет тихую очистку: точка восстановления + (сухой прогон) + удаление.
+
+    Используется и воркером вкладки «Расписание», и фоновой задачей Windows
+    (--silent-clean), поэтому не зависит от GUI.
+    """
+    on_log = on_log or (lambda text: None)
+    on_status = on_status or (lambda text: None)
+    on_progress = on_progress or (lambda done, total: None)
+    stop_event = stop_event or threading.Event()
+
+    if not keys:
+        on_log(i18n.t("sched.no_categories"))
+        return None
+
+    if make_restore:
+        on_log("")
+        on_log(i18n.t("sched.restore_creating"))
+        ok, rmsg = opt.create_system_restore_point(i18n.t("sched.restore_desc"))
+        if ok:
+            on_log(i18n.t("log.restore_ok"))
+        else:
+            on_log(i18n.t("log.restore_fail", rmsg) if rmsg
+                   else i18n.t("log.restore_no_admin"))
+
+    if dry_run_first:
+        on_status(i18n.t("status.scanning"))
+        on_log("")
+        on_log(i18n.t("sched.dry_header"))
+        scanned = core.scan_categories(keys, on_log=on_log, on_status=on_status,
+                                      stop_event=stop_event)
+        tot = sum(r["total_size"] for r in scanned.values())
+        on_log(i18n.t("log.scan_total", core.format_bytes(tot)))
+        on_status(i18n.t("status.cleaning"))
+        on_log("")
+        on_log(i18n.t("log.clean_header", i18n.t("log.mode_real")))
+        summary = core.clean_categories(scanned, dry_run=False, on_log=on_log,
+                                        on_status=on_status, on_progress=on_progress,
+                                        stop_event=stop_event)
+    else:
+        on_status(i18n.t("status.scanning"))
+        on_log("")
+        on_log(i18n.t("log.scan_header"))
+        scanned = core.scan_categories(keys, on_log=on_log, on_status=on_status,
+                                      stop_event=stop_event)
+        on_status(i18n.t("status.cleaning"))
+        on_log("")
+        on_log(i18n.t("log.clean_header", i18n.t("log.mode_real")))
+        summary = core.clean_categories(scanned, dry_run=False, on_log=on_log,
+                                        on_status=on_status, on_progress=on_progress,
+                                        stop_event=stop_event)
+
+    on_log("")
+    on_log(i18n.t("log.result_header"))
+    result_text = i18n.t("log.clean_result",
+                         i18n.t("log.clean_done"),
+                         summary["removed"], summary["skipped"],
+                         summary["errors"], core.format_bytes(summary["freed"]))
+    on_log(result_text)
+    return summary
+
+
+SCHED_TASK_NAME = "SweptQuietCleanup"
+
+
+def _run_task_ps1(ps_body: str):
+    """Пишет PowerShell-скрипт во временный .ps1, выполняет и удаляет его.
+
+    Возвращает (код_возврата, вывод). Через файл — чтобы не экранировать
+    кавычки пути с пробелами («win11 cleaner») прямо в командной строке.
+    Используется и для регистрации, и для удаления задачи (симметрично).
+    """
+    fd, ps_path = tempfile.mkstemp(suffix=".ps1", prefix="swept_task_")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write('$ErrorActionPreference = "Stop"\n' + ps_body)
+        return _run_cmd('powershell -NoProfile -ExecutionPolicy Bypass -File "{}"'
+                        .format(ps_path))
+    finally:
+        try:
+            os.remove(ps_path)
+        except Exception:
+            pass
+
+
+def _ps_quote(s: str) -> str:
+    """Обёртка строки в одинарные кавычки PowerShell (с экранированием ')."""
+    return "'" + str(s).replace("'", "''") + "'"
+
+
+def _decode_output(raw: bytes) -> str:
+    """Декодирует вывод консольной команды с запасными кодировками Windows.
+
+    На русской/локализованной Windows консольные утилиты (schtasks и др.)
+    печатают в OEM-кодировке (cp866), ANSI — cp1251. Вариант subprocess с
+    text=True и UTF-8 роняет внутренний reader-поток на не-UTF-8 байтах
+    (исключение не ловится try/except вокруг run), поэтому захватываем
+    байты и декодируем вручную с запасными кодировками.
+    """
+    for enc in ("utf-8", "cp866", "cp1251", "mbcs"):
+        try:
+            return raw.decode(enc)
+        except UnicodeDecodeError:
+            continue
+    return raw.decode("utf-8", errors="replace")
+
+
+def _run_cmd(cmd: str):
+    """Запускает внешнюю команду и возвращает (код_возврата, вывод)."""
+    try:
+        proc = subprocess.run(cmd, shell=True, capture_output=True, timeout=90)
+        raw = (proc.stdout or b"") + (proc.stderr or b"")
+        return proc.returncode, _decode_output(raw)
+    except Exception as exc:  # pragma: no cover - исключение запуска
+        return -1, str(exc)
+
+
+def _silent_clean_headless() -> int:
+    """Фоновый режим для задачи Windows: читает расписание и чистит молча."""
+    i18n.set_language(_load_saved_language())
+    s = settings.get_settings()
+    saved = s.get("Schedule.Categories", "") or ""
+    keys = [k for k in saved.split(",") if k] or [c["key"] for c in core.CATEGORIES]
+    make_restore = s.get("Schedule.Restore", "1") == "1"
+    dry = s.get("Schedule.Dry", "0") == "1"
+
+    if getattr(sys, "frozen", False):
+        base = os.path.dirname(sys.executable)
+    else:
+        base = os.path.dirname(os.path.abspath(__file__))
+    log_path = os.path.join(base, "swept_silent_clean.log")
+
+    def on_log(text):
+        line = text if text.endswith("\n") else text + "\n"
+        try:
+            sys.stdout.write(line)
+        except Exception:
+            pass
+        try:
+            with open(log_path, "a", encoding="utf-8") as fh:
+                fh.write(line)
+        except Exception:
+            pass
+
+    on_log(i18n.t("sched.header"))
+    try:
+        run_scheduled_cleanup(keys, make_restore=make_restore, dry_run_first=dry,
+                              on_log=on_log)
+        on_log(i18n.t("sched.finished"))
+        return 0
+    except Exception as exc:
+        on_log(i18n.t("log.error") + repr(exc))
+        return 1
+
+
 def main():
+    # Фоновый режим для автономной задачи Windows (schtasks): без окна, только лог.
+    if "--silent-clean" in sys.argv[1:]:
+        sys.exit(_silent_clean_headless())
+
     app = CleanerApp()
     app.mainloop()
 

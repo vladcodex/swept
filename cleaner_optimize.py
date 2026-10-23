@@ -585,7 +585,10 @@ def create_system_restore_point(desc: str = "Swept optimization") -> tuple:
     if winreg is None:
         return False, i18n.t("opt.not_windows")
     ps = system_tool("powershell.exe", "WindowsPowerShell", "v1.0")
-    safe_desc = str(desc).replace('"', "'")
+    # The description is interpolated into a double-quoted PowerShell string,
+    # so neutralise double quotes, backticks (escape char) and $ (variable
+    # expansion) to keep the command intact and injection-free.
+    safe_desc = re.sub(r'["`$]', "'", str(desc))
     script = ('Checkpoint-Computer -Description "{desc}" '
               '-RestorePointType "MODIFY_SETTINGS"').format(desc=safe_desc)
     code, out = _run([ps, "-NoProfile", "-NonInteractive", "-Command", script],

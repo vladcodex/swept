@@ -194,7 +194,7 @@ def save_language(code: str) -> bool:
 
 def registry_key_path() -> str:
     """Полный путь ветки реестра — для журнала и сообщений интерфейса."""
-    return r"HKEY_CURRENT_USER\\" + REG_PATH
+    return "HKEY_CURRENT_USER\\" + REG_PATH
 
 
 if __name__ == "__main__":  # небольшая самопроверка из командной строки

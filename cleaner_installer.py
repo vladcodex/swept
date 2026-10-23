@@ -36,8 +36,9 @@ cleaner_installer.py — безопасная установка игровых 
 инсталляторов. Для прямой загрузки ниже указаны официальные CDN-ссылки на
 артефакты; каждая проверяется подписью перед запуском.
 
-Состав каталога. 26 позиций в семи наборах: лаунчеры, браузеры, связь,
-офис, медиа, архиваторы и утилиты, плюс отдельно Visual C++ Redistributable.
+Состав каталога. 36 позиций в семи наборах: лаунчеры, браузеры, связь,
+офис, медиа, архиваторы и утилиты, плюс отдельно Visual C++ Redistributable
+(все версии 2005–2022, x86 и x64 — 12 пакетов разом).
 Часть программ имеет постоянный адрес «последняя версия» (Chrome, Firefox,
 Яндекс Браузер, Opera, ONLYOFFICE, Spotify, Telegram, Discord, Zoom, Slack),
 часть — версионный (7-Zip, K-Lite, WinRAR, VLC, SumatraPDF, LibreOffice,
@@ -69,6 +70,7 @@ import re
 import shutil
 import ssl
 import stat
+import time
 import subprocess
 import sys
 from urllib.parse import urlsplit
@@ -427,7 +429,8 @@ CATALOG = {
         "publishers": ("Microsoft",),
         "max_mb": 500,
     },
-    # Visual C++ Redistributable — официальный aka.ms на CDN Microsoft.
+    # Visual C++ Redistributable — официальные ссылки на CDN Microsoft
+    # (aka.ms для 2013/2015–2022, download.microsoft.com для 2005–2012).
     "vcredist_x64": {
         "title": "Visual C++ 2015–2022 (x64)",
         "title_en": "Visual C++ 2015–2022 (x64)",
@@ -449,6 +452,128 @@ CATALOG = {
         "args": ("/install", "/quiet", "/norestart"),
         "publishers": ("Microsoft",),
         "max_mb": 40,
+    },
+    # --- Visual C++ Redistributable: старые автономные версии (2005–2013) ---
+    # Официальные прямые ссылки с CDN Microsoft (download.microsoft.com / aka.ms).
+    # Все пакеты подписаны Microsoft -> проверка издателя достаточна, SHA-256
+    # не закреплён (как и у остальных пакетов Microsoft в каталоге).
+    "vcredist_2005_x86": {
+        "title": "Visual C++ 2005 SP1 (x86)",
+        "title_en": "Visual C++ 2005 SP1 (x86)",
+        "home": "https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist",
+        "url": ("https://download.microsoft.com/download/8/B/4/"
+                "8B42259F-5D70-43F4-AC2E-4B208FD8D66A/vcredist_x86.exe"),
+        "file": "vc_redist_2005_x86.exe",
+        "kind": "exe",
+        "args": ("/q", "/norestart"),
+        "publishers": ("Microsoft",),
+        "max_mb": 20,
+    },
+    "vcredist_2005_x64": {
+        "title": "Visual C++ 2005 SP1 (x64)",
+        "title_en": "Visual C++ 2005 SP1 (x64)",
+        "home": "https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist",
+        "url": ("https://download.microsoft.com/download/8/B/4/"
+                "8B42259F-5D70-43F4-AC2E-4B208FD8D66A/vcredist_x64.exe"),
+        "file": "vc_redist_2005_x64.exe",
+        "kind": "exe",
+        "args": ("/q", "/norestart"),
+        "publishers": ("Microsoft",),
+        "max_mb": 20,
+    },
+    "vcredist_2008_x86": {
+        "title": "Visual C++ 2008 SP1 (x86)",
+        "title_en": "Visual C++ 2008 SP1 (x86)",
+        "home": "https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist",
+        "url": ("https://download.microsoft.com/download/5/D/8/"
+                "5D8C65CB-C849-4025-8E95-C3966CAFD8AE/vcredist_x86.exe"),
+        "file": "vc_redist_2008_x86.exe",
+        "kind": "exe",
+        "args": ("/q", "/norestart"),
+        "publishers": ("Microsoft",),
+        "max_mb": 20,
+    },
+    "vcredist_2008_x64": {
+        "title": "Visual C++ 2008 SP1 (x64)",
+        "title_en": "Visual C++ 2008 SP1 (x64)",
+        "home": "https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist",
+        "url": ("https://download.microsoft.com/download/5/D/8/"
+                "5D8C65CB-C849-4025-8E95-C3966CAFD8AE/vcredist_x64.exe"),
+        "file": "vc_redist_2008_x64.exe",
+        "kind": "exe",
+        "args": ("/q", "/norestart"),
+        "publishers": ("Microsoft",),
+        "max_mb": 20,
+    },
+    "vcredist_2010_x86": {
+        "title": "Visual C++ 2010 SP1 (x86)",
+        "title_en": "Visual C++ 2010 SP1 (x86)",
+        "home": "https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist",
+        "url": ("https://download.microsoft.com/download/1/6/5/"
+                "165255E7-1014-4D0A-B094-B6A430A6BFFC/vcredist_x86.exe"),
+        "file": "vc_redist_2010_x86.exe",
+        "kind": "exe",
+        "args": ("/q", "/norestart"),
+        "publishers": ("Microsoft",),
+        "max_mb": 20,
+    },
+    "vcredist_2010_x64": {
+        "title": "Visual C++ 2010 SP1 (x64)",
+        "title_en": "Visual C++ 2010 SP1 (x64)",
+        "home": "https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist",
+        "url": ("https://download.microsoft.com/download/1/6/5/"
+                "165255E7-1014-4D0A-B094-B6A430A6BFFC/vcredist_x64.exe"),
+        "file": "vc_redist_2010_x64.exe",
+        "kind": "exe",
+        "args": ("/q", "/norestart"),
+        "publishers": ("Microsoft",),
+        "max_mb": 20,
+    },
+    "vcredist_2012_x86": {
+        "title": "Visual C++ 2012 Update 4 (x86)",
+        "title_en": "Visual C++ 2012 Update 4 (x86)",
+        "home": "https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist",
+        "url": ("https://download.microsoft.com/download/1/6/B/"
+                "16B06F60-3B20-4FF2-B699-5E9B7962F9AE/VSU_4/vcredist_x86.exe"),
+        "file": "vc_redist_2012_x86.exe",
+        "kind": "exe",
+        "args": ("/install", "/quiet", "/norestart"),
+        "publishers": ("Microsoft",),
+        "max_mb": 20,
+    },
+    "vcredist_2012_x64": {
+        "title": "Visual C++ 2012 Update 4 (x64)",
+        "title_en": "Visual C++ 2012 Update 4 (x64)",
+        "home": "https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist",
+        "url": ("https://download.microsoft.com/download/1/6/B/"
+                "16B06F60-3B20-4FF2-B699-5E9B7962F9AE/VSU_4/vcredist_x64.exe"),
+        "file": "vc_redist_2012_x64.exe",
+        "kind": "exe",
+        "args": ("/install", "/quiet", "/norestart"),
+        "publishers": ("Microsoft",),
+        "max_mb": 20,
+    },
+    "vcredist_2013_x86": {
+        "title": "Visual C++ 2013 (x86)",
+        "title_en": "Visual C++ 2013 (x86)",
+        "home": "https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist",
+        "url": "https://aka.ms/highdpimfc2013x86enu",
+        "file": "vc_redist_2013_x86.exe",
+        "kind": "exe",
+        "args": ("/install", "/quiet", "/norestart"),
+        "publishers": ("Microsoft",),
+        "max_mb": 20,
+    },
+    "vcredist_2013_x64": {
+        "title": "Visual C++ 2013 (x64)",
+        "title_en": "Visual C++ 2013 (x64)",
+        "home": "https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist",
+        "url": "https://aka.ms/highdpimfc2013x64enu",
+        "file": "vc_redist_2013_x64.exe",
+        "kind": "exe",
+        "args": ("/install", "/quiet", "/norestart"),
+        "publishers": ("Microsoft",),
+        "max_mb": 20,
     },
 }
 
@@ -543,6 +668,16 @@ APP_PRESETS = [
 ]
 
 VC_REDIST_PACKAGES = [
+    (CATALOG["vcredist_2005_x86"]["title"], "vcredist_2005_x86"),
+    (CATALOG["vcredist_2005_x64"]["title"], "vcredist_2005_x64"),
+    (CATALOG["vcredist_2008_x86"]["title"], "vcredist_2008_x86"),
+    (CATALOG["vcredist_2008_x64"]["title"], "vcredist_2008_x64"),
+    (CATALOG["vcredist_2010_x86"]["title"], "vcredist_2010_x86"),
+    (CATALOG["vcredist_2010_x64"]["title"], "vcredist_2010_x64"),
+    (CATALOG["vcredist_2012_x86"]["title"], "vcredist_2012_x86"),
+    (CATALOG["vcredist_2012_x64"]["title"], "vcredist_2012_x64"),
+    (CATALOG["vcredist_2013_x86"]["title"], "vcredist_2013_x86"),
+    (CATALOG["vcredist_2013_x64"]["title"], "vcredist_2013_x64"),
     (CATALOG["vcredist_x64"]["title"], "vcredist_x64"),
     (CATALOG["vcredist_x86"]["title"], "vcredist_x86"),
 ]
@@ -943,7 +1078,18 @@ def _download(url: str, dest: str, max_bytes: int, on_log=None) -> tuple:
         declared = response.headers.get("Content-Length")
         if declared and declared.isdigit() and int(declared) > max_bytes:
             raise InstallerSecurityError("Файл превышает допустимый размер")
-        fd = os.open(dest, flags, 0o600)
+        try:
+            fd = os.open(dest, flags, 0o600)
+        except FileExistsError:
+            # Stale file left by an interrupted earlier run (e.g. a child
+            # installer still held it when the secure dir was removed). The
+            # secure dir is hardened to SYSTEM+Administrators only, so no other
+            # (non-admin) process can recreate it in the window below.
+            try:
+                os.remove(dest)
+            except OSError:
+                pass
+            fd = os.open(dest, flags, 0o600)
         try:
             with os.fdopen(fd, "wb") as handle:
                 for chunk in response.iter_content(65536):
@@ -1123,10 +1269,16 @@ def _ensure_secure_dir(on_log=None) -> str:
 
 
 def _secure_delete(path: str) -> None:
-    """Затирает файл случайными байтами и удаляет (best-effort)."""
+    """Затирает файл случайными байтами и удаляет (best-effort, с повторами).
+
+    Повторяет попытку удаления, чтобы обойти кратковременную блокировку файла
+    дочерним процессом установщика (например, msiexec у VC++ redistributable),
+    который ещё держит exe-open после возврата управления.
+    """
+    if not os.path.isfile(path):
+        return
+    # Затирание содержимого — наилучшим образом, но не критично для очистки.
     try:
-        if not os.path.isfile(path):
-            return
         size = os.path.getsize(path)
         with open(path, "r+b", buffering=0) as handle:
             remaining = size
@@ -1138,19 +1290,55 @@ def _secure_delete(path: str) -> None:
             os.fsync(handle.fileno())
     except Exception:
         pass
+    # Удаление с повторами: файл может ещё держать дочерний процесс.
+    for _ in range(10):
+        try:
+            os.remove(path)
+            return
+        except OSError:
+            time.sleep(0.3)
     try:
         os.remove(path)
     except OSError:
         pass
 
 
-def _remove_secure_dir() -> None:
-    """Полностью сносит защищённую папку (файлы и подпапки)."""
+def _remove_readonly(func, path, _excinfo):
+    """Обработчик rmtree: снимает read-only и повторяет удаление файла/папки."""
     try:
-        if os.path.isdir(SECURE_DIR):
-            shutil.rmtree(SECURE_DIR, ignore_errors=True)
-    except Exception:
+        os.chmod(path, stat.S_IWRITE)
+        func(path)
+    except OSError:
         pass
+
+
+def _remove_secure_dir(on_log=None) -> None:
+    """Гарантированно сносит защищённую папку в ProgramData.
+
+    Учитывает два реальных сбоя очистки:
+      * файлы с атрибутом read-only (installer'ы часто такие оставляют);
+      * файлы, ещё занятые дочерним процессом (msiexec у VC++ redistributable).
+    Не молчит при неудаче — пишет предупреждение в журнал, чтобы остаток
+    папки в ProgramData было видно.
+    """
+    if not IS_WINDOWS:
+        return
+    if not os.path.isdir(SECURE_DIR):
+        return
+    last_err = None
+    for _ in range(8):
+        try:
+            shutil.rmtree(SECURE_DIR, onerror=_remove_readonly)
+        except Exception as exc:  # noqa: BLE001 — ловим всё как причину неудачи
+            last_err = exc
+        if not os.path.isdir(SECURE_DIR):
+            _log(on_log, f"  защищённая папка удалена: {SECURE_DIR}")
+            return
+        time.sleep(0.5)
+    _log(on_log,
+         f"  ВНИМАНИЕ: не удалось удалить {SECURE_DIR} — возможно, файл ещё "
+         f"занят другим процессом. Закройте лишние программы и перезапустите "
+         f"Swept, либо удалите папку вручную. Причина: {last_err}")
 
 
 # =============================================================================
@@ -1285,7 +1473,7 @@ def install_package(pkg_id: str, on_log=None, dry_run: bool = False) -> tuple:
         return _install_one(key, on_log=on_log)
     finally:
         # Гарантированная очистка защищённой папки после одиночной установки.
-        _remove_secure_dir()
+        _remove_secure_dir(on_log)
 
 
 def install_packages(packages: list, on_log=None, dry_run: bool = False) -> tuple:
@@ -1295,6 +1483,10 @@ def install_packages(packages: list, on_log=None, dry_run: bool = False) -> tupl
     Принимает как список ключей (["steam","epic"]), так и пары
     (("Steam","steam"), ...) — формат, который отдаёт PresetDialog.
     Возвращает (all_ok: bool, отчёт: str).
+
+    Изолированная папка в ProgramData создаётся один раз перед циклом и
+    гарантированно удаляется один раз после завершения (см. finally) —
+    когда всё установлено, папка убирается.
     """
     items = []
     for item in packages or []:
@@ -1309,16 +1501,33 @@ def install_packages(packages: list, on_log=None, dry_run: bool = False) -> tupl
 
     overall = True
     lines = []
+    if not dry_run:
+        # Одна изолированная папка на весь набор — создаём до цикла.
+        try:
+            _ensure_secure_dir(on_log)
+        except Exception as exc:
+            return False, f"не удалось подготовить изолированную папку: {exc}"
     try:
         for label, key in items:
-            ok, message = install_package(key, on_log=on_log, dry_run=dry_run)
+            if key not in CATALOG:
+                overall = False
+                lines.append(f"{label}: ОШИБКА — неизвестный пакет «{key}»")
+                _log(on_log, f"{label}: неизвестный пакет")
+                continue
+            if dry_run:
+                ok, message = True, (
+                    f"[СИМУЛЯЦИЯ] {CATALOG[key]['title']}: {CATALOG[key]['url']}")
+            else:
+                ok, message = _install_one(key, on_log=on_log)
             overall = overall and ok
             mark = "OK" if ok else "ОШИБКА"
             lines.append(f"{label}: {mark}" + (f" — {message}" if message else ""))
             _log(on_log, f"{label}: {'готово' if ok else 'не удалось'}"
                           + (f" — {message}" if not ok and message else ""))
     finally:
-        _remove_secure_dir()
+        # Когда всё установлено — удаляем папку в ProgramData (с повторами).
+        if not dry_run:
+            _remove_secure_dir(on_log)
     return overall, "\n".join(lines)
 
 
@@ -1382,7 +1591,7 @@ def main(argv=None) -> int:
         finally:
             if dest:
                 _secure_delete(dest)
-            _remove_secure_dir()
+            _remove_secure_dir(print)
 
     if args.install:
         ok, report = install_packages(args.install, on_log=print)

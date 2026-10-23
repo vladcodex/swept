@@ -17,6 +17,9 @@ Free and open source, with a dark interface available in **two languages — Eng
   hash, installed silently from an isolated folder.
 - ⚡ **Optimize** — 12 safe Windows tweaks (telemetry, power plan, background apps, Game DVR,
   widgets…) with a system restore point created before any change.
+- ⏰ **Schedule** — quiet automatic cleanup: daily or weekly at a chosen time, dry run first,
+  a restore point before deletion, and an optional Windows Task Scheduler task that runs Swept
+  in the background even when the app is closed.
 
 No telemetry, no bundled offers, no background services — and every deleted file and changed
 setting is written to the log.
@@ -59,7 +62,8 @@ switch between them at any time.*
 - **Analyze first, delete later.** The Analyze button only measures; nothing is touched until you press Clean.
 - **Scan-only switch.** Even the Clean button can run in simulation mode.
 - **Live log** with the full path of every deleted or skipped file.
-- Running browsers are detected and skipped instead of being broken mid-session.
+- Running browsers are detected: you can either skip their data (default) or let Swept close them
+  cleanly first — a soft close so tabs and sessions survive, forced only if a process ignores it.
 
 ### 📦 Install
 
@@ -116,6 +120,19 @@ row — and `⚠` failed.
 (PowerShell `Checkpoint-Computer`), so you can always roll back through *Control Panel → Recovery*.
 The same button creates one at any time without applying optimizations. Built-in apps removed by
 the debloat step cannot be restored automatically — the app says so and points to Microsoft Store.
+
+### ⏰ Schedule
+
+Quiet automatic cleanup with no user interaction:
+
+- **Daily or weekly**, at a chosen time (and weekday) — over only the categories you tick.
+- **Dry run first.** The scheduled run starts in simulation mode, logs what it would delete,
+  and only then performs the real cleanup.
+- **Restore point** is created before anything is deleted — the same safety net as Optimize.
+- Two ways to run it: an in-app timer while Swept is open, or a **Windows Task Scheduler task**
+  registered right from the tab (`schtasks`, administrator rights) that launches Swept headless
+  in the background — no window, no interaction. The task is removed from the same tab.
+- **Run now** lets you test the whole pipeline manually before trusting it to the schedule.
 
 ---
 

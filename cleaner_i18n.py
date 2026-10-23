@@ -58,6 +58,48 @@ STRINGS = {
         "tab.install": "  📦 Установка  ",
         "tab.optimize": "  ⚡ Оптимизация  ",
         "tab.log": "  📋 Журнал  ",
+        "tab.schedule": "  ⏰ Расписание  ",
+
+        # ----------------------------- тихая очистка по расписанию
+        "sched.title": "Тихая очистка по расписанию",
+        "sched.subtitle": "Автоматическая очистка без участия пользователя:\n"
+                          "сухой прогон, реальная очистка и авто-создание точки\n"
+                          "восстановления перед удалением. Безопасная автоматизация.",
+        "sched.enable": "Включить тихую очистку по расписанию",
+        "sched.freq": "Частота:",
+        "sched.daily": "Ежедневно",
+        "sched.weekly": "Еженедельно",
+        "sched.time": "Время (чч:мм):",
+        "sched.weekday": "День недели:",
+        "sched.categories": "Категории для очистки",
+        "sched.select_all": "Выбрать всё",
+        "sched.clear_all": "Снять всё",
+        "sched.restore": "Создавать точку восстановления перед удалением",
+        "sched.dry": "Сначала сухой прогон (симуляция), затем реальная очистка",
+        "sched.next": "Следующий запуск: {}",
+        "sched.next_off": "Расписание выключено",
+        "sched.status_idle": "Ожидание расписания…",
+        "sched.enabled": "Тихая очистка по расписанию включена.",
+        "sched.disabled": "Тихая очистка по расписанию выключена.",
+        "sched.busy": "[!] Уже выполняется операция — плановая очистка пропущена.",
+        "sched.header": "===== ТИХАЯ ОЧИСТКА ПО РАСПИСАНИЮ =====",
+        "sched.dry_header": "===== СУХОЙ ПРОГОН (симуляция) =====",
+        "sched.restore_creating": "Создаю точку восстановления перед удалением…",
+        "sched.restore_desc": "Swept scheduled cleanup",
+        "sched.finished": "Тихая очистка по расписанию завершена.",
+        "sched.no_categories": "[!] Не выбрана ни одна категория для тихой очистки — пропускаю.",
+        "sched.run_now": "Запустить сейчас",
+        "sched.save": "Сохранить расписание",
+        "sched.register_task": "Зарегистрировать задачу Windows (нужен админ)",
+        "sched.registered": "Задача Windows зарегистрирована: {}",
+        "sched.register_failed": "Не удалось зарегистрировать задачу: {}",
+        "sched.unregister_task": "Удалить задачу Windows",
+        "sched.unregistered": "Задача Windows удалена: {}",
+        "sched.unregister_failed": "Не удалось удалить задачу: {}",
+        "sched.register_hint": "Автономная задача (schtasks) запускает Swept в фоне,\n"
+                               "даже когда окно закрыто. Требует прав администратора.",
+        "sched.mon": "Пн", "sched.tue": "Вт", "sched.wed": "Ср",
+        "sched.thu": "Чт", "sched.fri": "Пт", "sched.sat": "Сб", "sched.sun": "Вс",
 
         # --------------------------------------------------------- очистка
         "clean.categories": "Категории очистки",
@@ -119,7 +161,7 @@ STRINGS = {
         "btn.upgrade": "⬆  Обновить",
         "btn.select": "Выбрать",
         "btn.install_vc": "⬇  Установить всё сразу",
-        "vc.label": "Visual C++ Redistributable (2015–2022, x86 и x64):",
+        "vc.label": "Visual C++ Redistributable (все версии 2005–2022, x86 и x64):",
         "winget.checking": "Проверка установщика…",
         "winget.ok": "Прямая установка доступна",
         "winget.missing": "⚠  Нужны права администратора для установки",
@@ -187,6 +229,11 @@ STRINGS = {
         "dlg.confirm_clean_title": "Подтверждение очистки",
         "dlg.confirm_clean_text": "Будет выполнено РЕАЛЬНОЕ удаление файлов в выбранных "
                                   "категориях.\n\nПродолжить?",
+        "dlg.browser_running_title": "Браузеры запущены",
+        "dlg.browser_running_text": "Запущены браузеры: {}.\n\nИх кэш, история и куки могут "
+                                    "быть заняты работающими процессами, и очистка пропустит "
+                                    "часть файлов или не сможет удалить их.\n\n"
+                                    "Закрыть браузеры перед очисткой?",
         "dlg.pkg_select_title": "Выбор пакета",
         "dlg.pkg_select_text": "Введите номер из списка результатов или ID пакета.",
         "dlg.close_title": "Операция выполняется",
@@ -205,7 +252,7 @@ STRINGS = {
         "dlg.upgrade_all_text": "Проверить обновления?\n\n"
                                 "Лаунчеры обновляются автоматически при запуске — "
                                 "отдельное обновление не требуется.",
-        "dlg.vc_text": "Установить Visual C++ Redistributable (2015–2022) "
+        "dlg.vc_text": "Установить все Visual C++ Redistributable (2005–2022) "
                        "для x86 и x64?\n\n"
                        "Всего {} пакетов. Файлы скачиваются с сайта Microsoft, проверяются "
                        "по цифровой подписи и ставятся по очереди.\n"
@@ -240,6 +287,10 @@ STRINGS = {
         "log.scan_total": "  Всего найдено: {}",
         "log.browsers_busy": "[!] Запущены браузеры: {} — их кэш/история/куки заняты "
                              "и будут пропущены.",
+        "log.browsers_closing": "  ⏳ Закрываю браузеры: {}…",
+        "log.browsers_closed": "  ✔ Браузеры закрыты: {}.",
+        "log.browsers_close_failed": "  ⚠ Не удалось закрыть браузеры: {} — очистка "
+                                     "продолжится без закрытия.",
         "log.analysis_status": "Анализ завершён: {}",
         "log.analysis_text": "Анализ завершён.\n\nНайдено: {}\nОбъём: {}",
         "log.clean_result": "{}\n"
@@ -350,6 +401,48 @@ STRINGS = {
         "tab.install": "  📦 Install  ",
         "tab.optimize": "  ⚡ Optimize  ",
         "tab.log": "  📋 Log  ",
+        "tab.schedule": "  ⏰ Schedule  ",
+
+        # ----------------------------- quiet scheduled cleanup
+        "sched.title": "Quiet scheduled cleanup",
+        "sched.subtitle": "Automatic cleanup with no user interaction:\n"
+                          "dry run, real cleanup and an automatic restore point\n"
+                          "before deletion. Safe automation.",
+        "sched.enable": "Enable quiet scheduled cleanup",
+        "sched.freq": "Frequency:",
+        "sched.daily": "Daily",
+        "sched.weekly": "Weekly",
+        "sched.time": "Time (hh:mm):",
+        "sched.weekday": "Weekday:",
+        "sched.categories": "Categories to clean",
+        "sched.select_all": "Select all",
+        "sched.clear_all": "Clear all",
+        "sched.restore": "Create a restore point before deletion",
+        "sched.dry": "Run a dry run (simulation) first, then real cleanup",
+        "sched.next": "Next run: {}",
+        "sched.next_off": "Schedule is off",
+        "sched.status_idle": "Waiting for the schedule…",
+        "sched.enabled": "Quiet scheduled cleanup is enabled.",
+        "sched.disabled": "Quiet scheduled cleanup is disabled.",
+        "sched.busy": "[!] An operation is already running — scheduled cleanup skipped.",
+        "sched.header": "===== QUIET SCHEDULED CLEANUP =====",
+        "sched.dry_header": "===== DRY RUN (simulation) =====",
+        "sched.restore_creating": "Creating a restore point before deletion…",
+        "sched.restore_desc": "Swept scheduled cleanup",
+        "sched.finished": "Quiet scheduled cleanup finished.",
+        "sched.no_categories": "[!] No category selected for quiet cleanup — skipping.",
+        "sched.run_now": "Run now",
+        "sched.save": "Save schedule",
+        "sched.register_task": "Register Windows task (admin required)",
+        "sched.registered": "Windows task registered: {}",
+        "sched.register_failed": "Failed to register task: {}",
+        "sched.unregister_task": "Remove Windows task",
+        "sched.unregistered": "Windows task removed: {}",
+        "sched.unregister_failed": "Failed to remove task: {}",
+        "sched.register_hint": "An offline task (schtasks) runs Swept in the background,\n"
+                               "even with the window closed. Requires admin to register.",
+        "sched.mon": "Mon", "sched.tue": "Tue", "sched.wed": "Wed",
+        "sched.thu": "Thu", "sched.fri": "Fri", "sched.sat": "Sat", "sched.sun": "Sun",
 
         # --------------------------------------------------------- очистка
         "clean.categories": "Cleanup categories",
@@ -411,7 +504,7 @@ STRINGS = {
         "btn.upgrade": "⬆  Upgrade",
         "btn.select": "Select",
         "btn.install_vc": "⬇  Install all at once",
-        "vc.label": "Visual C++ Redistributable (2015–2022, x86 and x64):",
+        "vc.label": "Visual C++ Redistributable (all versions 2005–2022, x86 and x64):",
         "winget.checking": "Checking installer…",
         "winget.ok": "Direct install available",
         "winget.missing": "⚠  Administrator rights are required for installation",
@@ -479,6 +572,11 @@ STRINGS = {
         "dlg.confirm_clean_title": "Confirm cleanup",
         "dlg.confirm_clean_text": "Files in the selected categories will be ACTUALLY "
                                   "deleted.\n\nContinue?",
+        "dlg.browser_running_title": "Browsers are running",
+        "dlg.browser_running_text": "Browsers are running: {}.\n\nTheir cache, history and "
+                                    "cookies may be locked by the running processes, so the "
+                                    "cleanup will skip or fail to delete some files.\n\n"
+                                    "Close the browsers before cleaning?",
         "dlg.pkg_select_title": "Select package",
         "dlg.pkg_select_text": "Enter a number from the results list or a package ID.",
         "dlg.close_title": "Operation in progress",
@@ -497,7 +595,7 @@ STRINGS = {
         "dlg.upgrade_all_text": "Check for updates?\n\n"
                                 "Launchers update themselves on start — a separate "
                                 "upgrade is not required.",
-        "dlg.vc_text": "Install Visual C++ Redistributable (2015–2022) "
+        "dlg.vc_text": "Install all Visual C++ Redistributable (2005–2022) "
                        "for x86 and x64?\n\n"
                        "{} packages in total. Files are downloaded from Microsoft, "
                        "verified against their signatures and installed one by one.\n"
@@ -533,6 +631,10 @@ STRINGS = {
         "log.scan_total": "  Total found: {}",
         "log.browsers_busy": "[!] Browsers are running: {} — their cache/history/cookies "
                              "are in use and will be skipped.",
+        "log.browsers_closing": "  ⏳ Closing browsers: {}…",
+        "log.browsers_closed": "  ✔ Browsers closed: {}.",
+        "log.browsers_close_failed": "  ⚠ Could not close the browsers: {} — cleanup will "
+                                     "continue without closing them.",
         "log.analysis_status": "Analysis finished: {}",
         "log.analysis_text": "Analysis finished.\n\nFound: {}\nSize: {}",
         "log.clean_result": "{}\n"
