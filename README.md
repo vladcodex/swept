@@ -80,7 +80,7 @@ directly from the vendor's own CDN over HTTPS. Seven sets, 24 programs:
 | Archivers | 7-Zip, WinRAR |
 | Utilities | Everything, Notepad++, Microsoft PowerToys |
 
-Plus the **Visual C++ Redistributable** 2015–2022, x64 and x86, installed in sequence.
+Plus the **Visual C++ Redistributable** packages 2005–2022 (x64 and x86), installed in sequence.
 
 - The **Choose** button opens a set as a list with checkboxes, so you install exactly what you
   need. Every entry is also reachable by typing its name in the search box.
