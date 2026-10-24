@@ -1,5 +1,7 @@
 # Swept
 
+<img src="assets/swept-logo.png" alt="Swept" width="96" align="right">
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11-0078D6.svg)](#requirements)
 [![Version](https://img.shields.io/github/v/release/vladcodex/swept?label=version&color=brightgreen)](https://github.com/vladcodex/swept/releases/latest)
