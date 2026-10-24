@@ -48,6 +48,28 @@ DEFAULT_LANGUAGE = "ru"
 # Допустимые коды языков (совпадают с ключами cleaner_i18n.STRINGS).
 SUPPORTED_LANGUAGES = ("ru", "en")
 
+# Имя маркера портативной сборки — лежит рядом с exe. Наличие этого файла
+# (или переменной окружения SWEPT_PORTABLE=1) переключает хранение настроек
+# с реестра Windows на локальный settings.json рядом с программой, чтобы
+# приложение можно было запускать с флешки без следов на машине.
+PORTABLE_MARKER = "swept.portable"
+
+
+def is_portable() -> bool:
+    """True, если запущена портативная сборка.
+
+    Определяется по маркеру рядом с exe (swept.portable) или переменной
+    окружения SWEPT_PORTABLE=1. В обычном (не собранном) запуске это False,
+    поэтому разработка/отладка не затрагиваются.
+    """
+    if os.environ.get("SWEPT_PORTABLE") == "1":
+        return True
+    if getattr(sys, "frozen", False):
+        exe_dir = os.path.dirname(sys.executable)
+        if os.path.isfile(os.path.join(exe_dir, PORTABLE_MARKER)):
+            return True
+    return False
+
 
 def _json_path() -> str:
     """Путь к settings.json рядом с программой (запасной вариант хранения)."""
@@ -125,9 +147,22 @@ class Settings:
 
     # --------------------------------------------------------------- публично
     def get(self, name: str, default: str = "") -> str:
-        """Строковая настройка: сначала реестр, потом файл, потом default."""
+        """Строковая настройка: сначала реестр, потом файл, потом default.
+
+        В портативной сборке реестр не используется — только локальный файл.
+        """
         if name in self._cache:
             return self._cache[name]
+        if is_portable():
+            # Портативная сборка: настройки живут в settings.json рядом с exe.
+            file_data = self._read_file()
+            value = file_data.get(name)
+            if value is None:
+                value = file_data.get(name.lower())
+            if isinstance(value, str) and value:
+                self._cache[name] = value
+                return value
+            return default
         value = self._read_registry(name)
         if value is None:
             file_data = self._read_file()
@@ -148,8 +183,10 @@ class Settings:
         return value
 
     def set(self, name: str, value: str) -> bool:
-        """Сохраняет настройку: реестр, а при неудаче — файл."""
+        """Сохраняет настройку: в портативной сборке — файл, иначе реестр→файл."""
         self._cache[name] = value
+        if is_portable():
+            return self._write_file(name, value)
         if self._write_registry(name, value):
             return True
         return self._write_file(name, value)

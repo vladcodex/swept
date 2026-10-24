@@ -14,6 +14,7 @@ Examples:
     python build.py --onedir         # folder instead of a single file (faster start)
     python build.py --console        # keep the console window (debugging)
     python build.py --test           # trial build without UAC into .build\test
+    python build.py --portable       # portable build (settings in a local file)
 """
 
 from __future__ import annotations
@@ -29,6 +30,8 @@ APP_NAME = "Swept"
 VERSION = (1, 3, 0, 0)
 ICON = os.path.join(BASE, "app.ico")
 ENTRY = os.path.join(BASE, "cleaner_gui.py")
+# Имя маркера портативной сборки (должно совпадать с cleaner_settings.PORTABLE_MARKER).
+PORTABLE_MARKER = "swept.portable"
 
 VERSION_INFO_TEMPLATE = """VSVersionInfo(
   ffi=FixedFileInfo(
@@ -107,6 +110,9 @@ def main() -> int:
     parser.add_argument("--test", action="store_true",
                         help="trial build without UAC into .build\\test")
     parser.add_argument("--name", default=APP_NAME, help="exe name")
+    parser.add_argument("--portable", action="store_true",
+                        help="portable build: keep all settings in a local file "
+                             "next to the exe (no Windows registry writes)")
     args = parser.parse_args()
 
     if not os.path.isfile(ENTRY):
@@ -160,6 +166,16 @@ def main() -> int:
     else:
         exe_path = os.path.join(dist, name, name + ".exe")
     if os.path.isfile(exe_path):
+        # Портативная сборка: кладём маркер рядом с exe, чтобы приложение
+        # хранило настройки в локальном файле, а не в реестре Windows.
+        if args.portable:
+            marker = os.path.join(os.path.dirname(exe_path), PORTABLE_MARKER)
+            try:
+                with open(marker, "w", encoding="utf-8") as handle:
+                    handle.write("portable\n")
+                print("Portable marker written: " + marker)
+            except OSError as err:
+                print("\n[WARN] could not write portable marker: " + str(err))
         size_mb = os.path.getsize(exe_path) / (1024 * 1024)
         print("\nDone: {}  ({:.1f} MB)".format(exe_path, size_mb))
         return 0
