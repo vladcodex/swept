@@ -99,8 +99,18 @@ header{height:68px;display:flex;align-items:center;justify-content:space-between
 .micro-row{display:flex;align-items:center;gap:9px;font:500 11px/1.3 var(--ui);color:var(--muted)}
 .micro-row svg{flex:0 0 auto;width:14px;height:14px;opacity:.75}
 .micro-row b{margin-left:auto;font:600 11px/1 var(--mono);color:var(--white)}
-.spark{margin-top:auto;padding-top:10px}
-.spark svg{width:100%;height:52px;display:block;overflow:visible}
+/* недельный тренд — заполняет низ панели вместо пустоты под показателями */
+.trend{flex:1 1 auto;display:flex;flex-direction:column;gap:9px;min-height:0;
+  margin-top:2px;padding-top:13px;border-top:1px solid var(--stroke-2)}
+.trend-head{display:flex;justify-content:space-between;align-items:baseline;
+  font:600 8.5px/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--muted-2)}
+.trend-head b{font:600 11px/1 var(--mono);letter-spacing:.02em;color:var(--mint)}
+.trend-bars{flex:1 1 auto;min-height:64px;display:flex;align-items:flex-end;gap:6px}
+.trend-bars i{flex:1 1 0;min-height:4px;border-radius:3px 3px 2px 2px;
+  background:linear-gradient(180deg,rgba(169,139,255,.42),rgba(169,139,255,.06));
+  transition:height .9s cubic-bezier(.2,.8,.2,1),background .6s}
+.trend-bars i.today{background:linear-gradient(180deg,var(--mint),rgba(87,255,198,.18));
+  box-shadow:0 0 18px rgba(87,255,198,.28)}
 
 /* center */
 .stage{position:relative;border-radius:26px;overflow:hidden;border:1px solid rgba(255,255,255,.05);
@@ -118,7 +128,8 @@ header{height:68px;display:flex;align-items:center;justify-content:space-between
   background:rgba(13,9,23,.92);border:1px solid rgba(87,255,198,.28);
   backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
   box-shadow:0 14px 34px rgba(0,0,0,.5),0 0 24px rgba(87,255,198,.12);
-  opacity:0;pointer-events:none;white-space:nowrap;
+  opacity:0;pointer-events:none;white-space:nowrap;max-width:calc(100% - 40px);
+  overflow:hidden;text-overflow:ellipsis;
   transition:opacity .28s,transform .28s cubic-bezier(.2,.8,.2,1)}
 .toast.on{opacity:1;transform:translate(-50%,0)}
 .toast.warn{border-color:rgba(255,184,107,.32);box-shadow:0 14px 34px rgba(0,0,0,.5),0 0 24px rgba(255,184,107,.14)}
@@ -144,14 +155,21 @@ header{height:68px;display:flex;align-items:center;justify-content:space-between
 .core-svg .track{stroke:rgba(255,255,255,.06)}
 .core-svg .prog{stroke:var(--mint);filter:drop-shadow(0 0 8px rgba(87,255,198,.7));
   transition:stroke-dashoffset .5s linear,stroke .6s}
+/* кольцо становится янтарным, когда DISM говорит «чистить надо» */
+.core-svg .prog.warn{stroke:var(--amber);filter:drop-shadow(0 0 8px rgba(255,184,107,.75))}
 .core-read{position:relative;text-align:center;z-index:3}
 .core-label{font:600 9px/1 var(--mono);letter-spacing:.24em;color:var(--muted-2);margin-bottom:9px}
 .core-value{font:300 52px/1 var(--mono);letter-spacing:-.03em;font-variant-numeric:tabular-nums;
   text-shadow:0 0 30px rgba(87,255,198,.25)}
 .core-value small{font-size:20px;letter-spacing:.02em;color:var(--muted);margin-left:4px}
-.core-sub{margin-top:9px;font:500 10.5px/1.4 var(--ui);color:var(--muted)}
-.core-hint{margin-top:8px;font:600 8.5px/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;
-  color:rgba(87,255,198,.55);transition:color .3s}
+/* до проверки WinSxS в центре ещё нет «нашей» цифры — она приглушена */
+.core-value.dim{color:var(--muted-2);text-shadow:none}
+.core-sub{margin-top:9px;font:500 10.5px/1.4 var(--ui);color:var(--muted);transition:color .3s}
+/* вердикт WinSxS — главное, что должен прочитать пользователь */
+.core-sub.yes{color:var(--amber);font-weight:700;font-size:11.5px;letter-spacing:.01em}
+.core-sub.no{color:var(--mint);font-weight:700;font-size:11.5px;letter-spacing:.01em}
+.core-hint{margin:8px auto 0;max-width:214px;font:600 8.5px/1.45 var(--mono);letter-spacing:.16em;
+  text-transform:uppercase;color:rgba(87,255,198,.55);transition:color .3s}
 .core-hint.alert{color:rgba(255,184,107,.75)}
 .wave{position:absolute;inset:0;border-radius:50%;border:1px solid var(--mint);
   opacity:0;pointer-events:none}
@@ -223,6 +241,11 @@ header{height:68px;display:flex;align-items:center;justify-content:space-between
 .hchip:active{transform:scale(.96)}
 .hchip[aria-pressed="true"]{background:rgba(87,255,198,.16);color:var(--mint);
   border-color:rgba(87,255,198,.45);box-shadow:0 0 16px rgba(87,255,198,.16)}
+/* информационные чипы (WinSxS): не переключаются, только сообщают факт */
+.hchip.fact{cursor:default;color:rgba(242,239,255,.62)}
+.hchip.fact:hover{background:rgba(255,255,255,.035);color:rgba(242,239,255,.62);
+  border-color:rgba(255,255,255,.07)}
+.hchip.fact:active{transform:none}
 .rb-keys{display:flex;align-items:center;gap:6px;margin-top:9px;
   font:500 9px/1 var(--mono);letter-spacing:.08em;color:var(--muted-2);text-transform:uppercase}
 .rb-keys kbd{font:600 9px/1 var(--mono);padding:3px 5px;border-radius:5px;color:var(--muted);
@@ -257,7 +280,7 @@ header{height:68px;display:flex;align-items:center;justify-content:space-between
     <div class="brand">
       <div class="brand-mark"></div>
       <div class="brand-name">Swept</div>
-      <div class="brand-ver">v1.2.0</div>
+      <div class="brand-ver">v1.3.0</div>
     </div>
     <div class="head-right">
       <div class="chip" id="adminChip"><span class="dot"></span><span data-t="admin">ADMIN</span></div>
@@ -273,7 +296,7 @@ header{height:68px;display:flex;align-items:center;justify-content:space-between
 
     <!-- left: telemetry -->
     <aside class="panel rail-left">
-      <div class="panel-title">System <span>live</span></div>
+      <div class="panel-title">System</div>
 
       <div class="stat">
         <div class="stat-head"><span class="stat-name" data-t="disk">Диск C:</span><span class="stat-val" id="diskVal">68%</span></div>
@@ -305,16 +328,16 @@ header{height:68px;display:flex;align-items:center;justify-content:space-between
         </div>
       </div>
 
-      <div class="spark">
-        <svg viewBox="0 0 240 52" preserveAspectRatio="none">
-          <defs><linearGradient id="sg" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stop-color="#57FFC6" stop-opacity=".35"/>
-            <stop offset="100%" stop-color="#57FFC6" stop-opacity="0"/>
-          </linearGradient></defs>
-          <path d="M0,40 L24,34 L48,37 L72,26 L96,30 L120,18 L144,22 L168,12 L192,16 L216,8 L240,11 L240,52 L0,52 Z" fill="url(#sg)"/>
-          <path d="M0,40 L24,34 L48,37 L72,26 L96,30 L120,18 L144,22 L168,12 L192,16 L216,8 L240,11"
-                fill="none" stroke="#57FFC6" stroke-width="1.4" stroke-linejoin="round" opacity=".85"/>
-        </svg>
+      <div class="trend">
+        <div class="trend-head">
+          <span data-t="week">Освобождено за 7 дней</span>
+          <b id="trendTotal">4.6 GB</b>
+        </div>
+        <div class="trend-bars">
+          <i style="height:34%"></i><i style="height:58%"></i><i style="height:41%"></i>
+          <i style="height:72%"></i><i style="height:26%"></i><i style="height:63%"></i>
+          <i class="today" id="trendToday" style="height:48%"></i>
+        </div>
       </div>
     </aside>
 
@@ -333,7 +356,7 @@ header{height:68px;display:flex;align-items:center;justify-content:space-between
                       stroke-dasharray="942" stroke-dashoffset="942"></circle>
             </svg>
             <div class="core-read">
-              <div class="core-label" data-t="reclaim">Можно освободить</div>
+              <div class="core-label" id="coreLabel">Можно освободить</div>
               <div class="core-value" id="reclaim">1.12<small>GB</small></div>
               <div class="core-sub" id="coreSub">15 категорий · 1 248 файлов</div>
               <div class="core-hint" id="coreHint">Нажмите «Анализ», чтобы начать</div>
@@ -356,22 +379,22 @@ header{height:68px;display:flex;align-items:center;justify-content:space-between
       <div class="log" id="log">
         <div class="log-row">
           <div class="log-dot"></div>
-          <div class="log-text">Очистка · 12.6 МБ<i>удалено 77 объектов</i></div>
+          <div class="log-text"><span data-t="lg1">Очистка · 12.6 МБ</span><i data-t="lg1s">удалено 77 объектов</i></div>
           <div class="log-time">15:12</div>
         </div>
         <div class="log-row">
           <div class="log-dot lilac"></div>
-          <div class="log-text">Анализ · 1.12 ГБ<i>15 категорий, 1 248 файлов</i></div>
+          <div class="log-text"><span data-t="lg2">Анализ · 1.12 ГБ</span><i data-t="lg2s">15 категорий, 1 248 файлов</i></div>
           <div class="log-time">14:58</div>
         </div>
         <div class="log-row">
           <div class="log-dot"></div>
-          <div class="log-text">Оптимизация · 8 твиков<i>точка восстановления создана</i></div>
+          <div class="log-text"><span data-t="lg3">Оптимизация · 8 твиков</span><i data-t="lg3s">точка восстановления создана</i></div>
           <div class="log-time">12:30</div>
         </div>
         <div class="log-row">
           <div class="log-dot amber"></div>
-          <div class="log-text">Расписание · пропуск<i>операция уже выполнялась</i></div>
+          <div class="log-text"><span data-t="lg4">Расписание · пропуск</span><i data-t="lg4s">операция уже выполнялась</i></div>
           <div class="log-time">11:02</div>
         </div>
       </div>
@@ -385,9 +408,9 @@ header{height:68px;display:flex;align-items:center;justify-content:space-between
       <div class="rb-title" id="rbTitle">Очистка</div>
       <div class="rb-sub" id="rbSub">15 категорий · 1 248 файлов · 1.12 ГБ</div>
       <div class="rb-keys">
-        <kbd>←</kbd><kbd>→</kbd><em>модуль</em>
-        <kbd>Enter</kbd><em>действие</em>
-        <kbd>Esc</kbd><em>отмена</em>
+        <kbd>←</kbd><kbd>→</kbd><kbd>1…6</kbd><em data-t="kMod">модуль</em>
+        <kbd>Enter</kbd><em data-t="kAct">действие</em>
+        <kbd>Esc</kbd><em data-t="kEsc">отмена</em>
       </div>
     </div>
     <div class="rb-chips" id="rbChips"></div>
@@ -408,13 +431,25 @@ header{height:68px;display:flex;align-items:center;justify-content:space-between
       admin:"ADMIN", disk:"Диск C:", temp:"Временные файлы", bin:"Корзина",
       categories:"Категорий", files:"Файлов к удалению", restore:"Точка восстановления",
       reclaim:"Можно освободить", stored:"Хранится локально",
-      cleaned:"Очищено только что", found:"найдено при анализе"
+      cleaned:"Очищено только что", freed:"Освобождено", found:"найдено при анализе",
+      week:"Освобождено за 7 дней",
+      kMod:"модуль", kAct:"действие", kEsc:"отмена",
+      lg1:"Очистка · 12.6 МБ", lg1s:"удалено 77 объектов",
+      lg2:"Анализ · 1.12 ГБ",  lg2s:"15 категорий, 1 248 файлов",
+      lg3:"Оптимизация · 8 твиков", lg3s:"точка восстановления создана",
+      lg4:"Расписание · пропуск", lg4s:"операция уже выполнялась"
     },
     en: {
       admin:"ADMIN", disk:"Drive C:", temp:"Temp files", bin:"Recycle Bin",
       categories:"Categories", files:"Files to remove", restore:"Restore point",
       reclaim:"Reclaimable", stored:"Stored locally",
-      cleaned:"Cleaned just now", found:"found on analysis"
+      cleaned:"Cleaned just now", freed:"Freed", found:"found on analysis",
+      week:"Freed in 7 days",
+      kMod:"module", kAct:"action", kEsc:"cancel",
+      lg1:"Cleanup · 12.6 MB", lg1s:"77 items removed",
+      lg2:"Analysis · 1.12 GB", lg2s:"15 categories, 1 248 files",
+      lg3:"Optimize · 8 tweaks", lg3s:"restore point created",
+      lg4:"Schedule · skipped", lg4s:"already ran today"
     }
   };
 
@@ -459,7 +494,20 @@ header{height:68px;display:flex;align-items:center;justify-content:space-between
       fbEn:["Log exported to CSV","Log cleared"],
       chipsRu:["Всё","Удалено","Пропущено","Ошибки"],
       chipsEn:["All","Removed","Skipped","Errors"],
-      icon:'<path d="M5 4h11l3 3v13H5z"/><path d="M8 9h8M8 13h8M8 17h5"/>' }
+      icon:'<path d="M5 4h11l3 3v13H5z"/><path d="M8 9h8M8 13h8M8 17h5"/>' },
+    /* WinSxS — единственный модуль, который работает не с файлами, а через
+       официальные команды DISM, поэтому у него своя логика вердикта. */
+    { id:"winsxs", ru:"WinSxS", en:"WinSxS",
+      subRu:"22.27 ГБ · пакетов: 6", subEn:"22.27 GB · packages: 6",
+      primaryRu:"Проверить", primaryEn:"Check",
+      primaryDoneRu:"Проверить снова", primaryDoneEn:"Check again",
+      secondaryRu:"Очистить", secondaryEn:"Clean",
+      fbRu:["Проверка завершена · очистка нужна","Очищено · 14.02 ГБ освобождено"],
+      fbEn:["Check done · cleanup needed","Cleaned · 14.02 GB freed"],
+      chipsRu:["Официальный DISM","Без /ResetBase","Только админ"],
+      chipsEn:["Official DISM","No /ResetBase","Admin only"],
+      staticChips:true,
+      icon:'<path d="M12 3l8 4-8 4-8-4z"/><path d="M4 12l8 4 8-4"/><path d="M4 17l8 4 8-4"/>' }
   ];
 
   /* ---------------- interface strings ---------------- */
@@ -471,8 +519,27 @@ header{height:68px;display:flex;align-items:center;justify-content:space-between
       hintBusy:"Идёт работа · Esc — отмена",
       hintCancel:"Отменено · можно запустить снова",
       hintDone:"Готово · всё чисто",
+      hintWinsxsIdle:"«Проверить» — решает DISM",
+      hintWinsxsYes:"Очистка нужна · нажмите «Очистить»",
+      hintWinsxsNo:"Очистка не требуется",
+      hintWinsxsDone:"Очищено · можно проверить снова",
+      busyPct:"Идёт работа · {p}% · Esc — отмена",
+      cleanBusy:"Идёт очистка…",
       cancel:"Отмена",
-      toastCancelled:"Операция отменена"
+      storeLabel:"Хранилище компонентов",
+      needYes:"Надо чистить: ДА",
+      needNo:"Надо чистить: НЕТ",
+      sizeLine:"{s} ГБ · пакетов: {p}",
+      freedLine:"Очищено · {s} ГБ освобождено",
+      whyCheck:"Сначала нажмите «Проверить»",
+      whyNoClean:"DISM: очистка не требуется",
+      whyNothing:"Нечего чистить — сначала анализ",
+      toastCancelled:"Операция отменена",
+      toastNoCancel:"Очистку WinSxS нельзя прервать",
+      toastWinsxsYes:"DISM: очистка нужна · пакетов: 6",
+      toastWinsxsNo:"DISM: очистка не требуется",
+      toastWinsxsCleaned:"WinSxS очищен · 14.02 ГБ освобождено",
+      logYes:"очистка нужна", logNo:"очистка не требуется"
     },
     en: {
       hintIdle:"Press Analyze to start",
@@ -481,8 +548,27 @@ header{height:68px;display:flex;align-items:center;justify-content:space-between
       hintBusy:"Working · Esc to cancel",
       hintCancel:"Cancelled · run again anytime",
       hintDone:"Done · all clear",
+      hintWinsxsIdle:"Check — DISM decides",
+      hintWinsxsYes:"Cleanup needed · press Clean",
+      hintWinsxsNo:"No cleanup required",
+      hintWinsxsDone:"Cleaned · you can check again",
+      busyPct:"Working · {p}% · Esc to cancel",
+      cleanBusy:"Cleaning…",
       cancel:"Cancel",
-      toastCancelled:"Operation cancelled"
+      storeLabel:"Component store",
+      needYes:"Cleanup needed: YES",
+      needNo:"Cleanup needed: NO",
+      sizeLine:"{s} GB · packages: {p}",
+      freedLine:"Cleaned · {s} GB freed",
+      whyCheck:"Press Check first",
+      whyNoClean:"DISM: no cleanup required",
+      whyNothing:"Nothing to clean — run analysis first",
+      toastCancelled:"Operation cancelled",
+      toastNoCancel:"WinSxS cleanup cannot be interrupted",
+      toastWinsxsYes:"DISM: cleanup needed · packages: 6",
+      toastWinsxsNo:"DISM: no cleanup required",
+      toastWinsxsCleaned:"WinSxS cleaned · 14.02 GB freed",
+      logYes:"cleanup needed", logNo:"no cleanup required"
     }
   };
 
@@ -499,9 +585,23 @@ header{height:68px;display:flex;align-items:center;justify-content:space-between
   let files = 1248;
   let lastValue = 1.12;          // последнее устойчивое значение в центре
 
+  /* Состояние хранилища компонентов. В демо DISM «отвечает» сразу,
+     в приложении это реальный вызов AnalyzeComponentStore. */
+  const winsxs = {
+    checked: false,      // вердикт получен
+    needed: false,       // DISM сказал «Да»
+    cleaning: false,     // идёт очистка (не прерывается)
+    afterClean: false,   // очистка только что завершилась
+    size: 22.27,         // размер хранилища, ГБ
+    free: 14.02,         // сколько освободит очистка, ГБ
+    freed: 0,            // сколько реально освободилось
+    packages: 6
+  };
+
   const $ = s => document.querySelector(s);
   const ring = $("#ring");
   const reclaimEl = $("#reclaim");
+  const coreLabel = $("#coreLabel");
   const coreSub = $("#coreSub");
   const coreHint = $("#coreHint");
   const prog = $("#prog");
@@ -524,15 +624,26 @@ header{height:68px;display:flex;align-items:center;justify-content:space-between
     toastTimer = setTimeout(() => toastEl.classList.remove("on"), 2300);
   }
 
-  function setHint(key, alert){
-    coreHint.textContent = UI[lang][key];
+  function fmt(s, v){
+    return String(s).replace(/\{(\w+)\}/g, (m, k) => (v[k] !== undefined ? v[k] : m));
+  }
+
+  function setHintText(text, alert){
+    coreHint.textContent = text;
     coreHint.classList.toggle("alert", !!alert);
+  }
+
+  function setHint(key, alert){
+    /* «очистка нужна» — единственная подсказка, которая сама просит действия */
+    if (alert === undefined) alert = key === "hintWinsxsYes";
+    setHintText(UI[lang][key], alert);
   }
 
   /* ---------------- build nodes ---------------- */
   const NODE_R = 235;
+  const STEP = 360 / MODULES.length;   // 6 модулей → шаг 60°
   const nodes = MODULES.map((m, i) => {
-    const angle = i * 72;          // rotate(0) + translateY(-R) = верхняя точка
+    const angle = i * STEP;          // rotate(0) + translateY(-R) = верхняя точка
     const btn = document.createElement("button");
     btn.className = "node";
     btn.type = "button";
@@ -563,17 +674,87 @@ header{height:68px;display:flex;align-items:center;justify-content:space-between
     });
   }
 
+  /* подпись под значением: у «Очистки» она меняется после удаления,
+     у остальных модулей — статичная строка из MODULES */
+  function moduleSub(i){
+    const m = MODULES[i];
+    if (m.id === "clean" && !files) return T[lang].cleaned;
+    if (m.id === "winsxs"){
+      const s = winsxs.size.toFixed(2);
+      return lang === "ru"
+        ? `${s} ГБ · пакетов: ${winsxs.packages}`
+        : `${s} GB · packages: ${winsxs.packages}`;
+    }
+    return lang === "ru" ? m.subRu : m.subEn;
+  }
+
   function idleHint(){
+    const m = MODULES[current];
+    if (m.id === "winsxs"){
+      if (winsxs.cleaning)   return "hintBusy";
+      if (!winsxs.checked)   return "hintWinsxsIdle";
+      if (winsxs.needed)     return "hintWinsxsYes";
+      if (winsxs.afterClean) return "hintWinsxsDone";
+      return "hintWinsxsNo";
+    }
     if (current !== 0) return "hintAct";
     if (!files) return "hintDone";
     if (analyzed) return "hintReady";
     return "hintIdle";
   }
 
+  /* центр — единственное место, где показывается состояние.
+     WinSxS живёт по своим правилам: там в центре вердикт DISM, а не объём мусора. */
+  function renderCore(){
+    coreSub.classList.remove("yes", "no");
+    if (MODULES[current].id === "winsxs"){
+      renderWinsxs();
+    } else {
+      prog.classList.remove("warn");
+      reclaimEl.classList.remove("dim");
+      coreLabel.textContent = files ? T[lang].reclaim : T[lang].freed;
+      setValue(lastValue, moduleSub(current));
+      setProgress(files ? (analyzed ? 1 : 0.18) : 0);
+    }
+    if (!busy) setHint(idleHint());
+  }
+
+  function renderWinsxs(){
+    if (winsxs.cleaning) return;     // центром управляет анимация очистки
+    coreSub.classList.remove("yes", "no");
+    coreLabel.textContent = UI[lang].storeLabel;
+
+    if (winsxs.afterClean){
+      setValue(winsxs.size, fmt(UI[lang].freedLine, { s: winsxs.freed.toFixed(2) }));
+      coreSub.classList.add("no");
+      prog.classList.remove("warn");
+      setProgress(0);
+      return;
+    }
+
+    if (!winsxs.checked){
+      setValue(winsxs.size,
+        fmt(UI[lang].sizeLine, { s: winsxs.size.toFixed(2), p: winsxs.packages }));
+      reclaimEl.classList.add("dim");     // до проверки цифра ещё «не наша»
+      prog.classList.remove("warn");
+      setProgress(0);
+      return;
+    }
+
+    reclaimEl.classList.remove("dim");
+    coreLabel.textContent = T[lang].reclaim;
+    setValue(winsxs.needed ? winsxs.free : 0);
+    coreSub.textContent = winsxs.needed ? UI[lang].needYes : UI[lang].needNo;
+    coreSub.classList.add(winsxs.needed ? "yes" : "no");
+    prog.classList.toggle("warn", winsxs.needed);
+    /* кольцо = доля хранилища, которую реально можно вернуть */
+    setProgress(winsxs.needed ? Math.min(1, winsxs.free / winsxs.size) : 0);
+  }
+
   function select(i){
     current = i;
-    const rot = -72 * i;
-    rotateRing(rot);
+    try { localStorage.setItem("swept.module", String(i)); } catch (e) { /* ignore */ }
+    rotateRing(-STEP * i);
     nodes.forEach((n, k) => {
       const on = k === i;
       n.el.classList.toggle("on", on);
@@ -581,23 +762,51 @@ header{height:68px;display:flex;align-items:center;justify-content:space-between
       n.el.tabIndex = on ? 0 : -1;
     });
     renderRibbon();
-    coreSub.textContent = lang === "ru"
-      ? MODULES[i].subRu : MODULES[i].subEn;
-    if (!busy) setHint(idleHint());
+    renderCore();
   }
 
   function renderRibbon(){
     const m = MODULES[current];
     const ru = lang === "ru";
+    const isW = m.id === "winsxs";
+
     $("#rbTitle").textContent = ru ? m.ru : m.en;
-    $("#rbSub").textContent = ru ? m.subRu : m.subEn;
-    $("#rbChips").innerHTML = (ru ? m.chipsRu : m.chipsEn)
-      .map((c, k) =>
-        `<button type="button" class="hchip" aria-pressed="${chipState[current][k]}">${c}</button>`)
-      .join("");
-    btnPrimary.textContent = busy ? UI[lang].cancel : (ru ? m.primaryRu : m.primaryEn);
+    $("#rbSub").textContent = moduleSub(current);
+
+    const chips = ru ? m.chipsRu : m.chipsEn;
+    $("#rbChips").innerHTML = m.staticChips
+      ? chips.map(c => `<span class="hchip fact">${c}</span>`).join("")
+      : chips.map((c, k) =>
+          `<button type="button" class="hchip" aria-pressed="${chipState[current][k]}">${c}</button>`).join("");
+
+    /* главная кнопка: во время работы она становится «Отмена»,
+       но очистку WinSxS прервать нельзя — поэтому там она гаснет */
+    if (busy && isW && winsxs.cleaning){
+      btnPrimary.textContent = UI[lang].cleanBusy;
+      btnPrimary.disabled = true;
+      btnPrimary.title = UI[lang].toastNoCancel;
+    } else if (busy){
+      btnPrimary.textContent = UI[lang].cancel;
+      btnPrimary.disabled = false;
+      btnPrimary.title = "";
+    } else {
+      btnPrimary.textContent = (isW && winsxs.checked)
+        ? (ru ? m.primaryDoneRu : m.primaryDoneEn)
+        : (ru ? m.primaryRu : m.primaryEn);
+      btnPrimary.disabled = false;
+      btnPrimary.title = "";
+    }
+
+    /* вторичная кнопка гаснет, когда действие заведомо ничего не сделает,
+       и объясняет причину в подсказке */
+    const noWinsxs = isW && (!winsxs.checked || !winsxs.needed);
+    const noFiles  = !isW && current === 0 && !files;
     btnSecondary.textContent = ru ? m.secondaryRu : m.secondaryEn;
-    btnSecondary.disabled = busy;
+    btnSecondary.disabled = busy || noWinsxs || noFiles;
+    btnSecondary.title = noWinsxs
+      ? (winsxs.checked ? UI[lang].whyNoClean : UI[lang].whyCheck)
+      : (noFiles ? UI[lang].whyNothing : "");
+
     nodes.forEach((n, k) => {
       const label = ru ? MODULES[k].ru : MODULES[k].en;
       n.el.querySelector(".node-label").textContent = label;
@@ -607,25 +816,29 @@ header{height:68px;display:flex;align-items:center;justify-content:space-between
   }
 
   /* ---------------- language ---------------- */
+  function applyLang(){
+    $("#lang").dataset.lang = lang;
+    document.querySelectorAll(".lang button").forEach(x =>
+      x.classList.toggle("on", x.dataset.lang === lang));
+    document.querySelectorAll("[data-t]").forEach(el => {
+      const k = el.dataset.t;
+      if (T[lang][k]) el.textContent = T[lang][k];
+    });
+    renderRibbon();
+    renderCore();
+  }
+
   document.querySelectorAll(".lang button").forEach(b => {
     b.addEventListener("click", () => {
       lang = b.dataset.lang;
       try { localStorage.setItem("swept.lang", lang); } catch (e) { /* ignore */ }
-      $("#lang").dataset.lang = lang;
-      document.querySelectorAll(".lang button").forEach(x =>
-        x.classList.toggle("on", x.dataset.lang === lang));
-      document.querySelectorAll("[data-t]").forEach(el => {
-        const k = el.dataset.t;
-        if (T[lang][k]) el.textContent = T[lang][k];
-      });
-      renderRibbon();
-      coreSub.textContent = lang === "ru" ? MODULES[current].subRu : MODULES[current].subEn;
-      if (!busy) setHint(idleHint());
+      applyLang();
     });
   });
 
   /* ---------------- value animation ---------------- */
   function setValue(gb, sub){
+    reclaimEl.classList.remove("dim");
     reclaimEl.innerHTML = gb > 0
       ? `${gb.toFixed(2)}<small>GB</small>`
       : `0<small>B</small>`;
@@ -637,85 +850,170 @@ header{height:68px;display:flex;align-items:center;justify-content:space-between
   }
 
   /* ---------------- actions ---------------- */
-  function setBusy(on){
-    busy = on;
-    btnPrimary.disabled = false;      // во время работы кнопка становится «Отмена»
-    renderRibbon();
-    setHint(on ? "hintBusy" : idleHint(), false);
-  }
-
   function fireWave(){
     wave.classList.remove("go");
     void wave.offsetWidth;
     wave.classList.add("go");
   }
 
+  /* один таймер на любую операцию: прогресс считается по реальному времени,
+     а не по кадрам — rAF в фоновой вкладке душится и операция зависла бы */
+  function startJob(o){
+    if (busy) return;
+    busy = true;
+    renderRibbon();
+    setHintText(fmt(UI[lang].busyPct, { p: 0 }));
+    fireWave();
+    const t0 = performance.now();
+    const iv = setInterval(() => {
+      const k = Math.min(1, (performance.now() - t0) / o.dur);
+      const e = 1 - Math.pow(1 - k, 3);
+      o.tick(k, e);
+      setHintText(fmt(UI[lang].busyPct, { p: Math.round(k * 100) }));
+      if (k >= 1){
+        clearInterval(iv);
+        job = null;
+        o.done();
+      }
+    }, 30);
+    job = { iv };
+  }
+
   function run(mode){
     if (busy) return;
-    setBusy(true);
-    fireWave();
-
     const scan = mode === "scan";
     scanning = scan;
     if (!scan) vacuum = 1;
 
-    const from = scan ? 0 : 1.12;
+    const from = scan ? 0 : (lastValue || 1.12);
     const to   = scan ? 1.12 : 0;
-    const dur  = scan ? 1500 : 1600;
-    const t0   = performance.now();
-
-    /* считаем прогресс по реальному времени, а не по кадрам:
-       rAF в фоновой вкладке душится и операция зависла бы навсегда */
-    const iv = setInterval(() => {
-      const k = Math.min(1, (performance.now() - t0) / dur);
-      const e = 1 - Math.pow(1 - k, 3);
-      setValue(from + (to - from) * e);
-      setProgress(scan ? k : 1 - k);
-      if (k >= 1){ clearInterval(iv); finish(mode); }
-    }, 30);
-
-    job = { iv };
+    startJob({
+      dur: scan ? 1500 : 1600,
+      tick(k, e){
+        setValue(from + (to - from) * e);
+        setProgress(scan ? k : 1 - k);
+      },
+      done(){ finish(mode); }
+    });
   }
 
   function finish(mode){
-    if (job) clearInterval(job.iv);
-    job = null;
     scanning = false;
     const ru = lang === "ru";
 
     if (mode === "scan"){
       analyzed = true;
-      setProgress(1);
-      setValue(1.12, ru ? "15 категорий · 1 248 файлов" : "15 categories · 1 248 files");
-      addLog("Анализ · 1.12 ГБ", ru ? "15 категорий, 1 248 файлов" : "15 categories, 1 248 files", "lilac");
+      lastValue = 1.12;
+      addLog(ru ? "Анализ · 1.12 ГБ" : "Analysis · 1.12 GB",
+             ru ? "15 категорий, 1 248 файлов" : "15 categories, 1 248 files", "lilac");
     } else {
       files = 0;
-      setProgress(0);
+      lastValue = 0;
       halo.classList.add("mint");
       $("#filesVal").textContent = "0";
       $("#tempVal").textContent = "0 B"; $("#tempBar").style.width = "0%";
       $("#binVal").textContent = "0 B";  $("#binBar").style.width = "0%";
-      setValue(0, ru ? "Очищено только что" : "Cleaned just now");
-      addLog("Очистка · 1.12 ГБ", ru ? "удалено 1 248 объектов · 3 пропущено" : "1 248 items removed · 3 skipped", "");
+      addLog(ru ? "Очистка · 1.12 ГБ" : "Cleanup · 1.12 GB",
+             ru ? "удалено 1 248 объектов · 3 пропущено" : "1 248 items removed · 3 skipped", "");
+      /* сегодняшний столбик в тренде подрастает — видно, что день не пустой */
+      const bar = $("#trendToday");
+      if (bar) bar.style.height = "92%";
+      const total = $("#trendTotal");
+      if (total) total.textContent = "5.72 GB";
       setTimeout(() => { vacuum = 0; }, 900);
     }
 
-    setBusy(false);
-    lastValue = mode === "scan" ? 1.12 : 0;
+    busy = false;
+    renderRibbon();
+    renderCore();
     toast(MODULES[0][ru ? "fbRu" : "fbEn"][mode === "scan" ? 0 : 1]);
   }
 
+  /* ---- WinSxS: проверка и очистка через DISM ---- */
+  function runCheck(){
+    if (busy) return;
+    scanning = true;
+    winsxs.afterClean = false;
+    coreLabel.textContent = UI[lang].storeLabel;
+    setValue(winsxs.size, "DISM · /AnalyzeComponentStore");
+    startJob({
+      dur: 1900,
+      tick(k){ setProgress(k); },
+      done(){ finishCheck(); }
+    });
+  }
+
+  function finishCheck(){
+    scanning = false;
+    winsxs.checked = true;
+    /* Вердикт не выдумываем: если возвращать нечего — значит «нет».
+       В приложении здесь стоит ответ DISM «Component Store Cleanup Recommended». */
+    winsxs.needed = winsxs.free > 0;
+    busy = false;
+    renderRibbon();
+    renderCore();
+    const ru = lang === "ru";
+    const yes = winsxs.needed;
+    toast(yes ? UI[lang].toastWinsxsYes : UI[lang].toastWinsxsNo);
+    addLog("WinSxS · " + (ru ? "проверка" : "check"),
+      ru ? `${winsxs.size.toFixed(2)} ГБ · пакетов: ${winsxs.packages} · ${yes ? UI[lang].logYes : UI[lang].logNo}`
+         : `${winsxs.size.toFixed(2)} GB · packages: ${winsxs.packages} · ${yes ? UI[lang].logYes : UI[lang].logNo}`,
+      yes ? "amber" : "");
+  }
+
+  function runWinsxsClean(){
+    if (busy || !winsxs.checked || !winsxs.needed) return;
+    winsxs.cleaning = true;
+    scanning = true;
+    vacuum = 1;
+    coreLabel.textContent = lang === "ru" ? "Очистка…" : "Cleaning…";
+    coreSub.classList.remove("yes", "no");
+    coreSub.textContent = "DISM · /StartComponentCleanup";
+    const from = winsxs.free;
+    startJob({
+      dur: 2600,
+      tick(k){
+        setValue(from * (1 - k));
+        setProgress(1 - k);
+      },
+      done(){ finishWinsxsClean(); }
+    });
+  }
+
+  function finishWinsxsClean(){
+    scanning = false;
+    winsxs.cleaning = false;
+    winsxs.freed = winsxs.free;
+    winsxs.size = Math.max(0, winsxs.size - winsxs.free);
+    winsxs.free = 0;
+    winsxs.packages = 0;
+    winsxs.needed = false;
+    winsxs.afterClean = true;
+    busy = false;
+    halo.classList.add("mint");
+    renderRibbon();
+    renderCore();
+    const ru = lang === "ru";
+    toast(UI[lang].toastWinsxsCleaned);
+    addLog("WinSxS · " + (ru ? "очистка" : "cleanup"),
+      ru ? `${winsxs.freed.toFixed(2)} ГБ освобождено`
+         : `${winsxs.freed.toFixed(2)} GB freed`, "");
+    setTimeout(() => { vacuum = 0; }, 900);
+  }
+
   function cancelJob(){
+    /* DISM нельзя убить на середине — иначе хранилище останется в мусоре */
+    if (winsxs.cleaning){ toast(UI[lang].toastNoCancel, true); return; }
     if (!job) return;
     clearInterval(job.iv);
     job = null;
     scanning = false;
     vacuum = 0;
+    busy = false;
+    renderRibbon();
     /* откатываем недокрученное значение, чтобы в центре не висело «0.85 GB» */
-    setValue(lastValue);
-    setProgress(lastValue > 0 ? 1 : 0);
-    coreSub.textContent = lang === "ru" ? MODULES[current].subRu : MODULES[current].subEn;
-    setBusy(false);
+    renderCore();
+    if (MODULES[current].id !== "winsxs") setProgress(lastValue > 0 ? 1 : 0);
     setHint("hintCancel", true);
     toast(UI[lang].toastCancelled, true);
   }
@@ -725,33 +1023,66 @@ header{height:68px;display:flex;align-items:center;justify-content:space-between
     if (busy) { cancelJob(); return; }
     const ru = lang === "ru";
     const m = MODULES[current];
+    if (m.id === "winsxs") { runCheck(); return; }
     if (current === 0) { run("scan"); return; }
     toast(m[ru ? "fbRu" : "fbEn"][0]);
-    addLog(m[ru ? "ru" : "en"] + " · " + m[ru ? "primaryRu" : "primaryEn"], "", "lilac");
+    addLog((ru ? m.ru : m.en) + " · " + (ru ? m.primaryRu : m.primaryEn), "", "lilac");
   });
 
   btnSecondary.addEventListener("click", () => {
     if (busy) return;
     const ru = lang === "ru";
     const m = MODULES[current];
+    if (m.id === "winsxs") { runWinsxsClean(); return; }
     if (current === 0) { run("clean"); return; }
     toast(m[ru ? "fbRu" : "fbEn"][1]);
-    addLog(m[ru ? "ru" : "en"] + " · " + m[ru ? "secondaryRu" : "secondaryEn"], "", "");
+    addLog((ru ? m.ru : m.en) + " · " + (ru ? m.secondaryRu : m.secondaryEn), "", "");
   });
 
-  /* чипы фильтров — переключаются и запоминаются по модулям */
+  /* чипы фильтров — переключаются и запоминаются по модулям;
+     у WinSxS чипы информационные и не нажимаются */
   $("#rbChips").addEventListener("click", e => {
     const chip = e.target.closest(".hchip");
-    if (!chip) return;
+    if (!chip || chip.classList.contains("fact")) return;
     const idx = Array.prototype.indexOf.call($("#rbChips").children, chip);
     if (idx < 0) return;
     chipState[current][idx] = !chipState[current][idx];
     chip.setAttribute("aria-pressed", String(chipState[current][idx]));
   });
 
-  /* клавиатура: ← → модуль, Enter действие, Esc отмена */
+  /* клавиатура: ← → модуль, 1…6 прямой переход, Enter действие, Esc отмена */
   document.addEventListener("keydown", e => {
-    if (e.key === "Escape" && busy) { e.preventDefault(); cancelJob(); return; }
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+    if (e.key === "Escape"){
+      if (busy){ e.preventDefault(); cancelJob(); }
+      return;
+    }
+
+    /* Enter на кнопке-узле уже обрабатывается кликом — иначе выбор сработал бы дважды */
+    if (e.key === "Enter"){
+      const t = e.target;
+      if (t && t.closest && t.closest(".node")) return;
+      e.preventDefault();
+      btnPrimary.click();
+      return;
+    }
+
+    if (e.key === " " && e.target === document.body){
+      e.preventDefault();
+      btnPrimary.click();
+      return;
+    }
+
+    /* цифры — самый быстрый способ добраться до нужного модуля */
+    if (e.key >= "1" && e.key <= String(MODULES.length)){
+      const n = parseInt(e.key, 10) - 1;
+      e.preventDefault();
+      select(n);
+      nodes[n].el.focus();
+      return;
+    }
+
     if (e.key !== "ArrowRight" && e.key !== "ArrowDown" &&
         e.key !== "ArrowLeft"  && e.key !== "ArrowUp") return;
     e.preventDefault();
@@ -860,10 +1191,14 @@ header{height:68px;display:flex;align-items:center;justify-content:space-between
   /* ---------------- boot ---------------- */
   resize();
   requestAnimationFrame(draw);
-  rotateRing(0);
-  select(0);
-  setProgress(0);
-  setTimeout(() => setProgress(0.18), 400);
+  /* возвращаемся к модулю, на котором пользователь остановился */
+  try {
+    const n = parseInt(localStorage.getItem("swept.module"), 10);
+    if (n >= 0 && n < MODULES.length) current = n;
+  } catch (e) { /* file:// без хранилища — начинаем с «Очистки» */ }
+  rotateRing(-STEP * current);
+  select(current);
+  applyLang();
 
   /* анимацию поворота включаем только после первого кадра,
      иначе подписи «доезжают» до вертикали на старте */
