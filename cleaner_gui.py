@@ -323,6 +323,8 @@ class CleanerApp(ctk.CTk):
 
         # --- Состояние ---
         self.vars = {}
+        self.browser_opt = {}          # {ключ_браузера: {подопция: BooleanVar}}
+        self._browser_opt_frames = {}  # {ключ_браузера: под-панель под-опций}
         self.scan_results = {}
         # Режим «только сканирование» живёт дольше одного построения панели:
         # модуль очистки создаётся лениво, а флаг нужен и до его открытия.
@@ -552,6 +554,8 @@ class CleanerApp(ctk.CTk):
             child.destroy()
 
         self.vars = {}
+        self.browser_opt = {}
+        self._browser_opt_frames = {}
         self.opt_vars = {}
         self._info_widgets = {}
         self.pkg_rows = []
@@ -1185,6 +1189,22 @@ class CleanerApp(ctk.CTk):
                 info.pack(side="right")
                 self._info_widgets[cat["key"]] = info
 
+                # Для браузеров — шестерёнка: раскрывает раздельные настройки
+                # очистки (кэш / cookie / история / пароли …), как в Wise.
+                if cat["key"] in core.BROWSER_KEYS:
+                    gear = ctk.CTkButton(
+                        row, text="⚙", width=26, height=22,
+                        font=ctk.CTkFont(size=12),
+                        fg_color=COLOR_CARD, hover_color=COLOR_ACCENT,
+                        text_color=COLOR_MUTED,
+                        command=lambda k=cat["key"]: self._toggle_browser_opts(k))
+                    gear.pack(side="right", padx=(8, 0))
+                    sub = ctk.CTkFrame(card, fg_color="transparent")
+                    sub.pack(fill="x", padx=(22, 10), pady=(0, 4))
+                    sub.pack_forget()  # скрыта, пока не нажмут ⚙
+                    self._browser_opt_frames[cat["key"]] = sub
+                    self._build_browser_opt_sub(sub, cat["key"])
+
         buttons = ctk.CTkFrame(panel, fg_color="transparent")
         buttons.pack(fill="x", padx=4, pady=(12, 6))
         ctk.CTkButton(buttons, text=i18n.t("btn.select_all"), width=120, height=30,
@@ -1244,6 +1264,71 @@ class CleanerApp(ctk.CTk):
 
         # Хранилище компонентов (WinSxS) — теперь отдельный модуль орбиты,
         # поэтому здесь его блок не создаётся.
+
+    # -------------------------------------------------- настройки браузеров
+    def _toggle_browser_opts(self, key: str) -> None:
+        """Показывает/скрывает вложенную панель под-опций браузера."""
+        frame = self._browser_opt_frames.get(key)
+        if not frame:
+            return
+        if frame.winfo_ismapped():
+            frame.pack_forget()
+        else:
+            frame.pack(fill="x", padx=(22, 10), pady=(0, 4))
+
+    def _build_browser_opt_sub(self, sub, key: str) -> None:
+        """Строит вложенную панель раздельных под-опций очистки браузера."""
+        self.browser_opt.setdefault(key, {})
+        ctk.CTkLabel(sub, text=i18n.t("clean.browser_options"),
+                     font=ctk.CTkFont(size=11, weight="bold"),
+                     text_color=COLOR_ACCENT).pack(anchor="w", padx=2, pady=(2, 4))
+        saved = settings.get_browser_options(key)
+        for s in core.get_browser_suboptions(key):
+            sv = tk.BooleanVar(value=s["key"] in saved)
+            self.browser_opt[key][s["key"]] = sv
+            cb = ctk.CTkCheckBox(
+                sub, text=i18n.fld(s, "title"),
+                variable=sv, font=ctk.CTkFont(size=12),
+                text_color=COLOR_TEXT, checkbox_width=18, checkbox_height=18,
+                fg_color=COLOR_ACCENT, hover_color=COLOR_ACCENT_HOVER,
+                command=lambda k=key, sub_opt=s, v=sv: self._on_browser_opt(k, sub_opt, v))
+            cb.pack(anchor="w", padx=6, pady=1)
+            # Под-опции, затрагивающие личные данные, — с пометкой «осторожно».
+            if core.is_browser_suboption_caution(s):
+                ctk.CTkLabel(sub, text="⚠ " + i18n.t("clean.browser_caution"),
+                             font=ctk.CTkFont(size=10),
+                             text_color=COLOR_MUTED).pack(
+                    anchor="w", padx=26, pady=(0, 2))
+
+    def _on_browser_opt(self, key: str, sub: dict, var: tk.BooleanVar) -> None:
+        """
+        Сохраняет выбор под-опции и, если пользователь ВКЛЮЧАЕТ опцию,
+        затрагивающую личные данные, спрашивает подтверждение. При отказе —
+        возвращает галочку в исходное (выключенное) состояние.
+        """
+        if var.get() and core.is_browser_suboption_caution(sub):
+            if not messagebox.askyesno(
+                    i18n.t("dlg.browser_opt_title"),
+                    i18n.t("dlg.browser_opt_text", i18n.fld(sub, "title"))):
+                var.set(False)
+        # Сохраняем актуальный набор и сбрасываем кэш анализа этой категории,
+        # чтобы следующий «Анализ»/«Очистить» пересчитал размер под новый выбор.
+        current = {sk for sk, v in self.browser_opt.get(key, {}).items() if v.get()}
+        settings.set_browser_options(key, current)
+        if getattr(self, "scan_results", None):
+            self.scan_results.pop(key, None)
+
+    def _browser_selected_map(self) -> dict:
+        """
+        Собирает {ключ_браузера: множество включённых под-опций} из текущих
+        галочек интерфейса — для передачи в ядро при сканировании/очистке.
+        """
+        result = {}
+        for key in core.BROWSER_KEYS:
+            if key in self.vars:  # браузер присутствует в списке категорий
+                result[key] = {sk for sk, v in self.browser_opt.get(key, {}).items()
+                               if v.get()}
+        return result
 
     def _build_winsxs_tab(self, parent):
         """Панель модуля WinSxS: заголовок с объяснением и сам блок DISM."""
@@ -2579,7 +2664,8 @@ class CleanerApp(ctk.CTk):
             messagebox.showinfo(i18n.t("dlg.no_categories_title"),
                                 i18n.t("dlg.no_categories_text"))
             return
-        self._start_clean_worker(mode="scan", keys=keys)
+        self._start_clean_worker(mode="scan", keys=keys,
+                                 selected_map=self._browser_selected_map())
 
     def on_clean(self):
         if self.running:
@@ -2611,9 +2697,11 @@ class CleanerApp(ctk.CTk):
                     i18n.t("dlg.confirm_clean_title"),
                     i18n.t("dlg.confirm_clean_text")):
                 return
-        self._start_clean_worker(mode="clean", keys=keys, dry_run=dry_run)
+        self._start_clean_worker(mode="clean", keys=keys, dry_run=dry_run,
+                                 selected_map=self._browser_selected_map())
 
-    def _start_clean_worker(self, mode: str, keys: list, dry_run: bool = True):
+    def _start_clean_worker(self, mode: str, keys: list, dry_run: bool = True,
+                            selected_map=None):
         self._set_running(True)
         self.stop_event.clear()
         self._set_progress(0)
@@ -2625,12 +2713,13 @@ class CleanerApp(ctk.CTk):
                         for key in keys if key in self.scan_results}
         thread = threading.Thread(
             target=self._clean_worker,
-            args=(mode, keys, dry_run, reusable),
+            args=(mode, keys, dry_run, reusable, selected_map),
             daemon=True,
         )
         thread.start()
 
-    def _clean_worker(self, mode: str, keys: list, dry_run: bool, results: dict):
+    def _clean_worker(self, mode: str, keys: list, dry_run: bool, results: dict,
+                     selected_map=None):
         def log(text):
             self.msg_queue.put(("log", text))
         def status(text):
@@ -2647,7 +2736,8 @@ class CleanerApp(ctk.CTk):
                 log("")
                 log(i18n.t("log.scan_header"))
                 scanned = core.scan_categories(missing, on_log=log, on_status=status,
-                                               stop_event=self.stop_event)
+                                               stop_event=self.stop_event,
+                                               selected_map=selected_map)
                 results.update(scanned)
                 self.scan_results.update(scanned)
                 for key, res in results.items():
@@ -3503,16 +3593,22 @@ class CleanerApp(ctk.CTk):
 # =============================================================================
 def run_scheduled_cleanup(keys, *, make_restore=True, dry_run_first=False,
                           on_log=None, on_status=None, on_progress=None,
-                          stop_event=None):
+                          stop_event=None, selected_map=None):
     """Выполняет тихую очистку: точка восстановления + (сухой прогон) + удаление.
 
     Используется и воркером вкладки «Расписание», и фоновой задачей Windows
     (--silent-clean), поэтому не зависит от GUI.
+    `selected_map` — выбор под-опций браузеров (по умолчанию берётся из
+    сохранённых настроек; None → умолчание ядра, т.е. только кэш).
     """
     on_log = on_log or (lambda text: None)
     on_status = on_status or (lambda text: None)
     on_progress = on_progress or (lambda done, total: None)
     stop_event = stop_event or threading.Event()
+
+    if selected_map is None:
+        selected_map = {key: settings.get_browser_options(key)
+                        for key in keys if key in core.BROWSER_KEYS}
 
     if not keys:
         on_log(i18n.t("sched.no_categories"))
@@ -3533,7 +3629,8 @@ def run_scheduled_cleanup(keys, *, make_restore=True, dry_run_first=False,
         on_log("")
         on_log(i18n.t("sched.dry_header"))
         scanned = core.scan_categories(keys, on_log=on_log, on_status=on_status,
-                                      stop_event=stop_event)
+                                      stop_event=stop_event,
+                                      selected_map=selected_map)
         tot = sum(r["total_size"] for r in scanned.values())
         on_log(i18n.t("log.scan_total", core.format_bytes(tot)))
         on_status(i18n.t("status.cleaning"))
@@ -3547,7 +3644,8 @@ def run_scheduled_cleanup(keys, *, make_restore=True, dry_run_first=False,
         on_log("")
         on_log(i18n.t("log.scan_header"))
         scanned = core.scan_categories(keys, on_log=on_log, on_status=on_status,
-                                      stop_event=stop_event)
+                                      stop_event=stop_event,
+                                      selected_map=selected_map)
         on_status(i18n.t("status.cleaning"))
         on_log("")
         on_log(i18n.t("log.clean_header", i18n.t("log.mode_real")))

@@ -151,6 +151,12 @@ STRINGS = {
         "clean.total_zero": "Освобождено: 0 Б",
         "clean.total_session": "Освобождено (сессия): {}",
         "clean.total_sim": "Найдено (симуляция): {}",
+        "clean.browser_options": "Что очищать",
+        "clean.browser_caution": "Удаляет личные данные браузера",
+        "dlg.browser_opt_title": "Удаление личных данных",
+        "dlg.browser_opt_text": "Вы включаете «{0}». Это безвозвратно удалит "
+                                "личные данные браузера (cookie, историю, пароли "
+                                "и т.п.). Продолжить?",
         "btn.analyze": "🔍  Анализ",
         "btn.clean": "🧹  Очистить",
         "btn.stop": "⏹  Стоп",
@@ -576,6 +582,12 @@ STRINGS = {
         "clean.total_zero": "Freed: 0 B",
         "clean.total_session": "Freed (session): {}",
         "clean.total_sim": "Found (simulation): {}",
+        "clean.browser_options": "What to clean",
+        "clean.browser_caution": "Removes the browser's personal data",
+        "dlg.browser_opt_title": "Removing personal data",
+        "dlg.browser_opt_text": "You are enabling “{0}”. This will permanently "
+                                "delete the browser's personal data (cookies, "
+                                "history, passwords, etc.). Continue?",
         "btn.analyze": "🔍  Analyze",
         "btn.clean": "🧹  Clean",
         "btn.stop": "⏹  Stop",
