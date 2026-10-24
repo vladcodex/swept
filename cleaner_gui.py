@@ -1692,10 +1692,16 @@ class CleanerApp(ctk.CTk):
 
         parts = []
         if report.get("actual"):
-            parts.append(i18n.t("winsxs.detail",
-                                core.format_bytes(report["actual"]),
-                                core.format_bytes(report.get("reclaimable") or 0)))
-        if report.get("packages"):
+            if recommended is True:
+                parts.append(i18n.t("winsxs.detail",
+                                    core.format_bytes(report["actual"]),
+                                    core.format_bytes(report.get("reclaimable") or 0)))
+            else:
+                # DISM сказал «нет» — не обещаем освобождение, которого не будет:
+                # рядом с «чистить не надо» цифра «освободится» только путает.
+                parts.append(i18n.t("winsxs.detail_no",
+                                    core.format_bytes(report["actual"])))
+        if report.get("packages") is not None:
             parts.append(i18n.t("winsxs.detail_pkgs", report["packages"]))
         if report.get("last_cleanup"):
             parts.append(i18n.t("winsxs.last", report["last_cleanup"]))
@@ -1770,6 +1776,10 @@ class CleanerApp(ctk.CTk):
         if not core.is_admin():
             messagebox.showwarning(i18n.t("dlg.winsxs_title"),
                                    i18n.t("winsxs.fail_admin"))
+            return
+        # Очистку запускаем только по свежему вердикту DISM «Да».
+        # Кнопка и так заблокирована, но проверка защищает от устаревшего отчёта.
+        if (self.winsxs_report or {}).get("recommended") is not True:
             return
         reclaim = (self.winsxs_report or {}).get("reclaimable") or 0
         if not messagebox.askyesno(
