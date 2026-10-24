@@ -63,6 +63,7 @@ COLOR_ACCENT_HOVER = "#2f6fd0"
 COLOR_GREEN = "#22c55e"
 COLOR_GREEN_HOVER = "#1ea34c"
 COLOR_RED = "#ef4444"
+COLOR_WARN = "#f59e0b"
 COLOR_TEXT = "#e5e7eb"
 COLOR_MUTED = "#9ca3af"
 COLOR_ROW_SELECTED = "#1f3b63"   # фон выбранной строки списка пакетов
@@ -269,6 +270,14 @@ class CleanerApp(ctk.CTk):
         self._lang_switch = None      # выпадающий список языков
         self._lang_label = None       # подпись «Язык» рядом со списком
         self._total_text = None       # текст «Освобождено…» с учётом режима
+        self.winsxs_report = None     # последний отчёт DISM по хранилищу компонентов
+        self.winsxs_busy = False      # идёт проверка/очистка WinSxS
+        self.winsxs_cleaning = False  # идёт именно очистка (её нельзя прервать)
+        self.winsxs_state = None      # подпись «Надо чистить: Да/Нет»
+        self.winsxs_detail = None     # размеры и дата последней очистки
+        self.winsxs_check_btn = None
+        self.winsxs_clean_btn = None
+        self.winsxs_progress = None
 
         # --- Состояние планировщика «тихой очистки по расписанию» ---
         self.schedule_stop_event = threading.Event()
@@ -431,6 +440,12 @@ class CleanerApp(ctk.CTk):
         self.opt_tip = None
         self.opt_rows = {}
         self._opt_live_visible = False
+        # Виджеты блока WinSxS пересоздаются вместе с вкладкой «Очистка».
+        self.winsxs_state = None
+        self.winsxs_detail = None
+        self.winsxs_check_btn = None
+        self.winsxs_clean_btn = None
+        self.winsxs_progress = None
 
         self.title(i18n.t("app.title"))
         self._build_header()
@@ -623,6 +638,66 @@ class CleanerApp(ctk.CTk):
                                            progress_color=COLOR_ACCENT)
         self.progress.set(0)
         self.progress.pack(fill="x", padx=14, pady=(4, 12))
+
+        # Хранилище компонентов (WinSxS). Это не удаление файлов, а служебная
+        # команда DISM, поэтому у блока свои кнопки и своё состояние.
+        self._build_winsxs_block(right)
+
+    def _build_winsxs_block(self, parent):
+        """Блок «Хранилище компонентов (WinSxS)» на вкладке очистки."""
+        box = ctk.CTkFrame(parent, fg_color=COLOR_CARD, corner_radius=10)
+        box.pack(fill="x", padx=14, pady=(0, 12))
+
+        head = ctk.CTkFrame(box, fg_color="transparent")
+        head.pack(fill="x", padx=12, pady=(10, 0))
+
+        ctk.CTkLabel(head, text=i18n.t("winsxs.title"),
+                     font=ctk.CTkFont(size=13, weight="bold"),
+                     text_color=COLOR_TEXT).pack(side="left")
+
+        ctk.CTkLabel(head, text=i18n.t("winsxs.sub"),
+                     font=ctk.CTkFont(size=10),
+                     text_color=COLOR_MUTED).pack(side="left", padx=(8, 0))
+
+        # Главный ответ на вопрос «надо чистить или нет».
+        self.winsxs_state = ctk.CTkLabel(
+            box, text=i18n.t("winsxs.state_unknown"),
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color=COLOR_MUTED, anchor="w", justify="left")
+        self.winsxs_state.pack(fill="x", padx=12, pady=(6, 0))
+
+        self.winsxs_detail = ctk.CTkLabel(
+            box, text=i18n.t("winsxs.hint"),
+            font=ctk.CTkFont(size=10), text_color=COLOR_MUTED,
+            anchor="w", justify="left", wraplength=520)
+        self.winsxs_detail.pack(fill="x", padx=12, pady=(3, 0))
+
+        row = ctk.CTkFrame(box, fg_color="transparent")
+        row.pack(fill="x", padx=12, pady=(8, 8))
+
+        self.winsxs_check_btn = ctk.CTkButton(
+            row, text=i18n.t("winsxs.check"), width=120, height=30,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=COLOR_ACCENT, hover_color=COLOR_ACCENT_HOVER,
+            command=self.on_winsxs_check)
+        self.winsxs_check_btn.pack(side="left")
+
+        self.winsxs_clean_btn = ctk.CTkButton(
+            row, text=i18n.t("winsxs.clean"), width=160, height=30,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=COLOR_GREEN, hover_color=COLOR_GREEN_HOVER,
+            state="disabled", command=self.on_winsxs_clean)
+        self.winsxs_clean_btn.pack(side="left", padx=(8, 0))
+
+        # Полоса прогресса DISM: показывается только во время операции,
+        # чтобы в спокойном состоянии не выглядела как ещё один орган управления.
+        self.winsxs_progress = ctk.CTkProgressBar(
+            box, height=6, corner_radius=3, progress_color=COLOR_ACCENT)
+        self.winsxs_progress.set(0)
+
+        # Состояние могло быть получено до перерисовки интерфейса
+        # (например, при смене языка) — восстанавливаем подписи.
+        self._render_winsxs_report()
 
     # ============================================= ВКЛАДКА «УСТАНОВКА»
     def _build_install_tab(self, parent):
@@ -1127,6 +1202,8 @@ class CleanerApp(ctk.CTk):
         # Пока идёт любая операция, вкладка «Установка» тоже блокируется.
         self._apply_installer_buttons(state)
         self._set_lang_switch_enabled(not state)
+        # Блок WinSxS зависит и от общей занятости, и от своей собственной.
+        self._render_winsxs_report()
 
     def _set_lang_switch_enabled(self, enabled: bool):
         """Блокирует переключатель языка на время операций."""
@@ -1230,6 +1307,36 @@ class CleanerApp(ctk.CTk):
             self.opt_status.configure(text=i18n.t("status.done"))
             if msg[1]:
                 messagebox.showinfo(i18n.t("dlg.restore_done"), msg[1])
+        elif kind == "winsxs_progress":
+            if self.winsxs_progress is not None:
+                self.winsxs_progress.set(msg[1])
+        elif kind == "winsxs_report":
+            self.winsxs_report = msg[1]
+            self._render_winsxs_report()
+            recommended = (msg[1] or {}).get("recommended")
+            if recommended is not None:
+                self._append_log(i18n.t(
+                    "log.winsxs_recommended",
+                    i18n.t("winsxs.need_yes") if recommended
+                    else i18n.t("winsxs.need_no")))
+        elif kind == "winsxs_cleaned":
+            result = msg[1] or {}
+            if result.get("ok"):
+                self._append_log(i18n.t("log.winsxs_clean_done"))
+                self.status_label.configure(text=i18n.t("log.winsxs_clean_done"))
+                # После очистки прежний отчёт устарел — просим проверить снова.
+                self.winsxs_report = None
+                self._render_winsxs_report()
+                messagebox.showinfo(i18n.t("dlg.winsxs_title"),
+                                    i18n.t("log.winsxs_clean_done"))
+            else:
+                self._append_log(i18n.t("log.winsxs_failed",
+                                        result.get("code")))
+                messagebox.showwarning(i18n.t("dlg.winsxs_title"),
+                                       i18n.t("winsxs.fail_generic"))
+        elif kind == "winsxs_done":
+            self._set_winsxs_busy(False)
+            self._set_running(False)
         elif kind == "sched_running":
             # Тихая плановая очистка: как _set_running, но БЕЗ всплывающих окон.
             self._set_running(msg[1])
@@ -1257,7 +1364,13 @@ class CleanerApp(ctk.CTk):
 
     def _on_close(self):
         """Закрытие окна: останавливаем фоновые операции и завершаем работу."""
-        if self.running:
+        if self.winsxs_cleaning:
+            # DISM-очистку нельзя прервать: процесс продолжит работу уже
+            # без окна программы, поэтому предупреждаем отдельно.
+            if not messagebox.askyesno(i18n.t("dlg.winsxs_title"),
+                                       i18n.t("dlg.winsxs_close")):
+                return
+        elif self.running:
             # Закрытие во время очистки/установки обрывает операцию на середине:
             # спрашиваем подтверждение, чтобы это не было неожиданностью.
             if not messagebox.askyesno(i18n.t("dlg.close_title"),
@@ -1497,6 +1610,178 @@ class CleanerApp(ctk.CTk):
             self.analyze_btn.configure(state="normal")
             self.clean_btn.configure(state="normal")
             self.stop_btn.configure(state="disabled")
+
+    # ================================================ ХРАНИЛИЩЕ КОМПОНЕНТОВ
+    def _render_winsxs_report(self):
+        """Перерисовывает блок WinSxS по сохранённому отчёту DISM."""
+        if self.winsxs_state is None:
+            return
+        busy = self.running or self.winsxs_busy
+        report = self.winsxs_report
+
+        if not report:
+            self.winsxs_state.configure(text=i18n.t("winsxs.state_unknown"),
+                                        text_color=COLOR_MUTED)
+            self.winsxs_detail.configure(text=i18n.t("winsxs.hint"),
+                                         text_color=COLOR_MUTED)
+            self.winsxs_check_btn.configure(text=i18n.t("winsxs.check"),
+                                            state="disabled" if busy else "normal")
+            self.winsxs_clean_btn.configure(state="disabled")
+            return
+
+        if not report.get("ok"):
+            reason = report.get("reason") or ""
+            if reason == "stopped":
+                # Пользователь сам остановил проверку — это не ошибка.
+                self.winsxs_state.configure(text=i18n.t("winsxs.state_unknown"),
+                                            text_color=COLOR_MUTED)
+                self.winsxs_detail.configure(text=i18n.t("winsxs.stopped"),
+                                             text_color=COLOR_MUTED)
+                self.winsxs_check_btn.configure(text=i18n.t("winsxs.check"),
+                                                state="disabled" if busy else "normal")
+                self.winsxs_clean_btn.configure(state="disabled")
+                return
+            if reason == "no_admin":
+                detail = i18n.t("winsxs.fail_admin")
+            elif reason == "unparsed":
+                detail = i18n.t("winsxs.fail_unparsed")
+            else:
+                detail = i18n.t("winsxs.fail_generic")
+            self.winsxs_state.configure(text=i18n.t("winsxs.state_fail"),
+                                        text_color=COLOR_RED)
+            self.winsxs_detail.configure(text=detail, text_color=COLOR_MUTED)
+            self.winsxs_check_btn.configure(text=i18n.t("winsxs.check"),
+                                            state="disabled" if busy else "normal")
+            self.winsxs_clean_btn.configure(state="disabled")
+            return
+
+        recommended = report.get("recommended")
+        if recommended is True:
+            self.winsxs_state.configure(text=i18n.t("winsxs.state_yes"),
+                                        text_color=COLOR_WARN)
+        elif recommended is False:
+            self.winsxs_state.configure(text=i18n.t("winsxs.state_no"),
+                                        text_color=COLOR_GREEN)
+        else:
+            self.winsxs_state.configure(text=i18n.t("winsxs.state_unknown"),
+                                        text_color=COLOR_MUTED)
+
+        parts = []
+        if report.get("actual"):
+            parts.append(i18n.t("winsxs.detail",
+                                core.format_bytes(report["actual"]),
+                                core.format_bytes(report.get("reclaimable") or 0)))
+        if report.get("packages"):
+            parts.append(i18n.t("winsxs.detail_pkgs", report["packages"]))
+        if report.get("last_cleanup"):
+            parts.append(i18n.t("winsxs.last", report["last_cleanup"]))
+        self.winsxs_detail.configure(
+            text=" · ".join(parts) if parts else i18n.t("winsxs.hint"),
+            text_color=COLOR_MUTED)
+
+        self.winsxs_check_btn.configure(text=i18n.t("winsxs.recheck"),
+                                        state="disabled" if busy else "normal")
+        self.winsxs_clean_btn.configure(
+            state="normal" if (recommended is True and not busy) else "disabled")
+
+    def _set_winsxs_busy(self, state: bool):
+        """Блокирует блок WinSxS на время операции DISM."""
+        self.winsxs_busy = state
+        if state:
+            if self.winsxs_progress is not None:
+                self.winsxs_progress.pack(fill="x", padx=12, pady=(0, 10))
+        else:
+            self.winsxs_cleaning = False
+            if self.winsxs_progress is not None:
+                self.winsxs_progress.set(0)
+                self.winsxs_progress.pack_forget()
+        self._render_winsxs_report()
+
+    def on_winsxs_check(self):
+        """Проверка хранилища компонентов официальной командой DISM."""
+        if self.running or self.winsxs_busy:
+            return
+        if not core.is_admin():
+            messagebox.showwarning(i18n.t("dlg.winsxs_title"),
+                                   i18n.t("winsxs.fail_admin"))
+            return
+        # Старый отчёт больше не актуален — иначе на экране висел бы
+        # прежний ответ «Да/Нет» во время новой проверки.
+        self.winsxs_report = None
+        # Флаг остановки мог остаться поднятым с прошлого раза — иначе новая
+        # проверка оборвалась бы на первом же шаге.
+        self.stop_event.clear()
+        self._set_running(True)
+        self._set_winsxs_busy(True)
+        # Проверку прерывать безопасно: она ничего не меняет.
+        self.stop_btn.configure(state="normal")
+        self.status_label.configure(text=i18n.t("winsxs.checking"))
+        self._append_log("")
+        self._append_log(i18n.t("log.winsxs_start"))
+        threading.Thread(target=self._winsxs_check_worker, daemon=True).start()
+
+    def _winsxs_check_worker(self):
+        def log(text):
+            line = (text or "").strip()
+            if not line or line.startswith("["):
+                return          # прогресс-бар DISM в журнал не пишем
+            self.msg_queue.put(("log", line))
+
+        def progress(value):
+            self.msg_queue.put(("winsxs_progress", value))
+
+        try:
+            report = core.analyze_component_store(
+                on_line=log, on_progress=progress, stop_event=self.stop_event)
+        except Exception as exc:
+            log(i18n.t("log.error") + repr(exc))
+            report = {"ok": False, "reason": "failed", "output": ""}
+        self.msg_queue.put(("winsxs_report", report))
+        self.msg_queue.put(("winsxs_done", False))
+
+    def on_winsxs_clean(self):
+        """Очистка хранилища компонентов официальной командой DISM."""
+        if self.running or self.winsxs_busy:
+            return
+        if not core.is_admin():
+            messagebox.showwarning(i18n.t("dlg.winsxs_title"),
+                                   i18n.t("winsxs.fail_admin"))
+            return
+        reclaim = (self.winsxs_report or {}).get("reclaimable") or 0
+        if not messagebox.askyesno(
+                i18n.t("dlg.winsxs_title"),
+                i18n.t("dlg.winsxs_text", core.format_bytes(reclaim))):
+            return
+        # Снимаем флаг прошлой остановки: иначе очистка откажется стартовать.
+        self.stop_event.clear()
+        self._set_running(True)
+        self._set_winsxs_busy(True)
+        self.winsxs_cleaning = True
+        # Очистку прерывать нельзя — кнопка «Стоп» блокируется.
+        self.stop_btn.configure(state="disabled")
+        self.status_label.configure(text=i18n.t("winsxs.cleaning"))
+        self._append_log("")
+        self._append_log(i18n.t("log.winsxs_clean_start"))
+        threading.Thread(target=self._winsxs_clean_worker, daemon=True).start()
+
+    def _winsxs_clean_worker(self):
+        def log(text):
+            line = (text or "").strip()
+            if not line or line.startswith("["):
+                return
+            self.msg_queue.put(("log", line))
+
+        def progress(value):
+            self.msg_queue.put(("winsxs_progress", value))
+
+        try:
+            result = core.cleanup_component_store(
+                on_line=log, on_progress=progress)
+        except Exception as exc:
+            log(i18n.t("log.error") + repr(exc))
+            result = {"ok": False, "reason": "failed", "code": -1, "output": ""}
+        self.msg_queue.put(("winsxs_cleaned", result))
+        self.msg_queue.put(("winsxs_done", True))
 
     # ============================================================== ДЕЙСТВИЯ (clean)
     def on_stop(self):

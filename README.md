@@ -44,7 +44,7 @@ portable program with five tabs:
 
 | Tab | What it is for |
 |---|---|
-| **🧹 Cleanup** | Frees disk space: temp files, browser caches, Windows Update cache, Recycle Bin, logs, dumps and game-launcher junk across 15 categories. Always analyzes before deleting. |
+| **🧹 Cleanup** | Frees disk space: temp files, browser caches, Windows Update cache, Recycle Bin, logs, dumps and game-launcher junk across 15 categories. Always analyzes before deleting. Also checks and cleans the WinSxS component store with the official DISM commands. |
 | **📦 Install** | A curated catalog of 24 popular programs plus 12 Visual C++ Redistributable packages, fetched from the vendors' own CDNs and verified by signature or pinned hash before anything runs. |
 | **⚡ Optimize** | 12 safe Windows tweaks (telemetry, power plan, background apps, Game DVR, debloat) with a system restore point created before any change. |
 | **⏰ Schedule** | Quiet automatic cleanup: daily or weekly, dry run first, restore point before deletion, optionally driven by a Windows Task Scheduler task that runs Swept headless in the background. |
@@ -104,6 +104,21 @@ of it is verified before it runs.
 - **Live log** with the full path of every deleted or skipped file.
 - Running browsers are detected: you can either skip their data (default) or let Swept close them
   cleanly first — a soft close so tabs and sessions survive, forced only if a process ignores it.
+
+**Component store (WinSxS)** sits at the bottom of the Cleanup tab. This is the one area where
+deleting files is not an option: WinSxS is built from hard links to live system components, and
+manual removal breaks Windows Update. Swept uses the official DISM commands instead:
+
+| Button | Command | What it does |
+|---|---|---|
+| Check | `dism /Online /Cleanup-Image /AnalyzeComponentStore` | Measures the store and prints the official verdict |
+| Clean WinSxS | `dism /Online /Cleanup-Image /StartComponentCleanup` | Removes superseded update components |
+
+The block answers one question plainly — **cleanup needed: YES / NO** — based on DISM's own
+recommendation, and shows the store size, how much cleanup would free, the number of reclaimable
+packages and the date of the last cleanup. The **Clean** button stays disabled while DISM says NO.
+`/ResetBase` is deliberately not used, so the latest installed update remains uninstallable.
+A check takes about a minute; a cleanup takes 5–20 minutes and cannot be interrupted.
 
 ### 📦 Install
 
@@ -209,6 +224,10 @@ Swept is built around the assumption that a cleaner must never be able to eat yo
 11. **The staging folder is not writable by users.** `%ProgramData%\SweptSecureTemp` carries a
     protected DACL with `SYSTEM` and `Administrators` only, inheritance disabled — which also blocks
     DLL hijacking from a normal user session.
+12. **WinSxS is never touched by the file deleter.** The component store is on the hard blacklist,
+    and it is handled only through `dism.exe` taken from `%SystemRoot%\System32` — the command is an
+    argument vector with `shell=False`, `ResetBase` is never passed, and the Clean button is disabled
+    unless DISM itself answers "cleanup recommended: Yes".
 
 ---
 
@@ -241,6 +260,10 @@ follows you rather than the folder.
   is updated — the intended trade-off.
 - Silent switches are fixed in the catalog. If a vendor changes one, the installer may show its own
   window instead of running quietly; the installation itself still completes.
+- **WinSxS cleanup requires administrator rights** and takes real time: about a minute to check,
+  5–20 minutes to clean. It cannot be interrupted once started — closing the window leaves DISM
+  working in the background. The verdict is whatever DISM reports for your build; Swept only
+  translates and displays it.
 - The `.exe` is not code-signed, so SmartScreen may warn about an unknown publisher on first run.
 
 ## Feedback

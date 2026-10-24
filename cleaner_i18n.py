@@ -114,6 +114,48 @@ STRINGS = {
         "btn.select_all": "Выбрать всё",
         "btn.clear_all": "Снять всё",
 
+        # --------------------------------------------- хранилище компонентов
+        "winsxs.title": "Хранилище компонентов (WinSxS)",
+        "winsxs.sub": "официальная команда DISM",
+        "winsxs.state_unknown": "Надо чистить: —",
+        "winsxs.state_yes": "Надо чистить: ДА",
+        "winsxs.state_no": "Надо чистить: НЕТ",
+        "winsxs.state_fail": "Надо чистить: не удалось проверить",
+        "winsxs.check": "Проверить",
+        "winsxs.clean": "Очистить WinSxS",
+        "winsxs.recheck": "Проверить снова",
+        "winsxs.detail": "Хранилище: {} · освободится ≈{}",
+        "winsxs.detail_pkgs": "пакетов: {}",
+        "winsxs.last": "последняя очистка: {}",
+        "winsxs.checking": "Проверяю хранилище компонентов…",
+        "winsxs.cleaning": "Очищаю хранилище компонентов (5–20 минут)…",
+        "winsxs.hint": "WinSxS нельзя чистить удалением файлов — только штатной "
+                       "командой DISM. Очистка безопасна: последнее обновление "
+                       "остаётся откатываемым.",
+        "winsxs.fail_admin": "Нужны права администратора",
+        "winsxs.fail_start": "Не удалось запустить DISM",
+        "winsxs.fail_timeout": "Превышено время ожидания DISM",
+        "winsxs.fail_generic": "Не удалось выполнить операцию DISM",
+        "winsxs.fail_unparsed": "DISM завершился, но отчёт не распознан",
+        "winsxs.stopped": "Проверка остановлена",
+        "winsxs.need_yes": "нужна",
+        "winsxs.need_no": "не нужна",
+        "dlg.winsxs_title": "Очистка WinSxS",
+        "dlg.winsxs_text": "Запустить официальную очистку хранилища компонентов?\n\n"
+                           "Удалятся устаревшие компоненты обновлений "
+                           "(≈{}).\n"
+                           "Операция занимает 5–20 минут, прерывать её нельзя.\n"
+                           "Windows не будет перезагружен.",
+        "dlg.winsxs_close": "Очистка хранилища компонентов уже выполняется.\n\n"
+                            "Прервать её нельзя: если закрыть программу, DISM "
+                            "продолжит работу в фоне.\n\n"
+                            "Закрыть окно?",
+        "log.winsxs_start": "Проверка хранилища компонентов (DISM)…",
+        "log.winsxs_recommended": "Рекомендация DISM: очистка {}",
+        "log.winsxs_clean_start": "Очистка хранилища компонентов (DISM)…",
+        "log.winsxs_clean_done": "Хранилище компонентов очищено",
+        "log.winsxs_failed": "Ошибка DISM (код {})",
+
         # ------------------------------------------------------- установка
         "install.title": "📦  Установка и обновление программ",
         "install.search_ph": "Название программы, например: 7zip, vscode, notepad++",
@@ -456,6 +498,48 @@ STRINGS = {
         "btn.stop": "⏹  Stop",
         "btn.select_all": "Select all",
         "btn.clear_all": "Clear all",
+
+        # --------------------------------------------- component store
+        "winsxs.title": "Component store (WinSxS)",
+        "winsxs.sub": "official DISM command",
+        "winsxs.state_unknown": "Cleanup needed: —",
+        "winsxs.state_yes": "Cleanup needed: YES",
+        "winsxs.state_no": "Cleanup needed: NO",
+        "winsxs.state_fail": "Cleanup needed: check failed",
+        "winsxs.check": "Check",
+        "winsxs.clean": "Clean WinSxS",
+        "winsxs.recheck": "Check again",
+        "winsxs.detail": "Store: {} · frees ≈{}",
+        "winsxs.detail_pkgs": "packages: {}",
+        "winsxs.last": "last cleanup: {}",
+        "winsxs.checking": "Analyzing the component store…",
+        "winsxs.cleaning": "Cleaning the component store (5–20 minutes)…",
+        "winsxs.hint": "WinSxS cannot be cleaned by deleting files — only with the "
+                       "official DISM command. It is safe: the latest update stays "
+                       "uninstallable.",
+        "winsxs.fail_admin": "Administrator rights required",
+        "winsxs.fail_start": "Could not start DISM",
+        "winsxs.fail_timeout": "DISM timed out",
+        "winsxs.fail_generic": "DISM operation failed",
+        "winsxs.fail_unparsed": "DISM finished but the report was not recognized",
+        "winsxs.stopped": "Check stopped",
+        "winsxs.need_yes": "required",
+        "winsxs.need_no": "not required",
+        "dlg.winsxs_title": "WinSxS cleanup",
+        "dlg.winsxs_text": "Run the official component store cleanup?\n\n"
+                           "Superseded update components will be removed "
+                           "(≈{}).\n"
+                           "It takes 5–20 minutes and cannot be interrupted.\n"
+                           "Windows will not be restarted.",
+        "dlg.winsxs_close": "The component store cleanup is already running.\n\n"
+                            "It cannot be interrupted: if you close the program, "
+                            "DISM keeps working in the background.\n\n"
+                            "Close the window?",
+        "log.winsxs_start": "Analyzing the component store (DISM)…",
+        "log.winsxs_recommended": "DISM recommendation: cleanup {}",
+        "log.winsxs_clean_start": "Cleaning the component store (DISM)…",
+        "log.winsxs_clean_done": "Component store cleaned",
+        "log.winsxs_failed": "DISM error (code {})",
 
         # ------------------------------------------------------- установка
         "install.title": "📦  Install and update apps",

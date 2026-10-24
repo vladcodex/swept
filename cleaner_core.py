@@ -47,6 +47,7 @@ import ctypes
 import fnmatch
 import os
 import platform
+import re
 import stat
 import subprocess
 import sys
@@ -1155,6 +1156,358 @@ def empty_recycle_bin() -> bool:
         return result == 0
     except Exception:
         return False
+
+
+# =============================================================================
+# 8. ХРАНИЛИЩЕ КОМПОНЕНТОВ (WinSxS) — официальные команды DISM
+# =============================================================================
+#
+# WinSxS НЕЛЬЗЯ чистить удалением файлов: там жёсткие ссылки на системные
+# компоненты, и ручное удаление ломает обновления Windows. Штатный способ —
+# служебная утилита DISM:
+#
+#     dism /Online /Cleanup-Image /AnalyzeComponentStore   — только проверка
+#     dism /Online /Cleanup-Image /StartComponentCleanup   — очистка
+#
+# Обе команды требуют прав администратора. Проверка занимает около минуты,
+# очистка — от 5 до 20 минут. Ключ /ResetBase намеренно НЕ используется:
+# без него последнее установленное обновление остаётся откатываемым.
+
+_DISM_TIMEOUT_ANALYZE = 900      # 15 минут — с большим запасом
+_DISM_TIMEOUT_CLEAN = 5400       # 90 минут: на медленных дисках бывает долго
+
+# Прогресс-бар DISM: "[=============  17.7%  =============]"
+_PROGRESS_RE = re.compile(r"(\d{1,3}(?:[.,]\d+)?)\s*%")
+
+# Размер с единицей измерения: "13.91 GB", "114.53 MB", "8,23 ГБ".
+_SIZE_RE = re.compile(
+    r"(\d+(?:[.,]\d+)?)\s*(TB|GB|MB|KB|B|ТБ|ГБ|МБ|КБ|Б)(?![A-Za-zА-Яа-я])",
+    re.IGNORECASE)
+
+_SIZE_UNITS = {
+    "B": 1, "Б": 1,
+    "KB": 1024, "КБ": 1024,
+    "MB": 1024 ** 2, "МБ": 1024 ** 2,
+    "GB": 1024 ** 3, "ГБ": 1024 ** 3,
+    "TB": 1024 ** 4, "ТБ": 1024 ** 4,
+}
+
+# Ключевые слова строк отчёта. DISM переводит подписи вместе с системой,
+# поэтому ищем по смыслу, а не по позиции строки: работает и для русского,
+# и для английского вывода.
+_DISM_LABELS = (
+    ("recommended",  ("cleanup recommended", "recommended cleanup",
+                      "рекомендуется очистка")),
+    ("packages",     ("reclaimable packages", "освобождаемых пакетов")),
+    ("last_cleanup", ("date of last cleanup", "дата последней очистки")),
+    ("actual",       ("actual size of component store",
+                      "фактический размер хранилища")),
+    ("explorer",     ("explorer reported size", "по данным проводника")),
+    ("backups",      ("backups and disabled features", "резервные копии")),
+    ("cache",        ("cache and temporary data", "кэш и временные")),
+)
+
+
+def _console_encoding() -> str:
+    """
+    Кодовая страница консоли.
+
+    DISM — консольная программа и при перенаправлении вывода пишет в
+    OEM-кодировке (866 для русской Windows), а не в UTF-8. Без этого
+    русские подписи превращаются в мусор и парсер их не находит.
+    """
+    try:
+        code_page = ctypes.windll.kernel32.GetOEMCP()
+        if code_page:
+            return "cp{}".format(int(code_page))
+    except Exception:
+        pass
+    return "utf-8"
+
+
+def _iter_process_lines(stream, encoding: str):
+    """
+    Читает вывод процесса построчно.
+
+    Разделяем и по \\r, и по \\n: DISM перерисовывает прогресс-бар через
+    возврат каретки, поэтому при чтении «по строкам» он пришёл бы одной
+    огромной строкой до первого перевода строки.
+    """
+    buffer = b""
+    while True:
+        try:
+            chunk = stream.read1(4096)
+        except AttributeError:          # поток без read1 (обычный файл)
+            chunk = stream.read(4096)
+        if not chunk:
+            break
+        buffer += chunk
+        parts = re.split(rb"[\r\n]+", buffer)
+        buffer = parts.pop()
+        for raw in parts:
+            if raw.strip():
+                yield raw.decode(encoding, "replace").rstrip()
+    if buffer.strip():
+        yield buffer.decode(encoding, "replace").rstrip()
+
+
+def _dism_value(line: str) -> str:
+    """Значение после разделителя ' : ' (DISM использует пробелы вокруг ':').
+
+    Разделять по последнему двоеточию нельзя: в дате последней очистки
+    ('2026-10-20 21:39:33') двоеточия есть и внутри значения.
+    """
+    if " : " in line:
+        return line.split(" : ", 1)[1].strip()
+    if ":" in line:
+        return line.rsplit(":", 1)[1].strip()
+    return ""
+
+
+def _parse_size(text: str):
+    """'13.91 GB' -> байты. Возвращает None, если размера в строке нет."""
+    match = _SIZE_RE.search(text or "")
+    if not match:
+        return None
+    try:
+        number = float(match.group(1).replace(",", "."))
+    except ValueError:
+        return None
+    multiplier = _SIZE_UNITS.get(match.group(2).upper())
+    return int(number * multiplier) if multiplier else None
+
+
+def _yes_no(text: str):
+    """'Да'/'Yes' -> True, 'Нет'/'No' -> False, иначе None."""
+    value = (text or "").strip().lower()
+    if value.startswith(("yes", "да", "true")):
+        return True
+    if value.startswith(("no", "нет", "false")):
+        return False
+    return None
+
+
+def _first_int(text: str):
+    match = re.search(r"\d+", text or "")
+    return int(match.group()) if match else None
+
+
+def _progress_from_line(line: str):
+    """Доля выполнения (0..1) из строки прогресс-бара DISM, иначе None."""
+    stripped = line.strip()
+    if not stripped.startswith("["):
+        return None
+    match = _PROGRESS_RE.search(stripped)
+    if not match:
+        return None
+    try:
+        percent = float(match.group(1).replace(",", "."))
+    except ValueError:
+        return None
+    return max(0.0, min(1.0, percent / 100.0))
+
+
+def parse_component_store_report(text: str) -> dict:
+    """
+    Разбирает текстовый отчёт DISM /AnalyzeComponentStore.
+
+    Возвращает словарь:
+        recommended — True/False/None («надо ли чистить»);
+        actual      — фактический размер хранилища, байты;
+        explorer    — размер «по данным проводника», байты;
+        backups     — резервные копии и отключённые компоненты, байты;
+        cache       — кэш и временные данные, байты;
+        reclaimable — сколько примерно освободится (backups + cache);
+        packages    — число освобождаемых пакетов;
+        last_cleanup— дата последней очистки строкой;
+        parsed      — удалось ли вытащить хоть что-то осмысленное.
+    """
+    report = {
+        "recommended": None, "actual": None, "explorer": None,
+        "backups": None, "cache": None, "reclaimable": None,
+        "packages": None, "last_cleanup": None, "parsed": False,
+    }
+    for line in (text or "").splitlines():
+        low = line.strip().lower()
+        if not low or ":" not in low:
+            continue
+        value = _dism_value(line)
+        for key, markers in _DISM_LABELS:
+            if not any(marker in low for marker in markers):
+                continue
+            if key == "recommended":
+                report["recommended"] = _yes_no(value)
+            elif key == "last_cleanup":
+                report["last_cleanup"] = value or None
+            elif key == "packages":
+                report["packages"] = _first_int(value)
+            else:
+                size = _parse_size(value)
+                if size is not None:
+                    report[key] = size
+            break
+
+    if report["backups"] is not None or report["cache"] is not None:
+        report["reclaimable"] = (report["backups"] or 0) + (report["cache"] or 0)
+    report["parsed"] = (report["recommended"] is not None
+                        or report["actual"] is not None)
+    return report
+
+
+def _run_dism(args, on_line=None, on_progress=None, stop_event=None,
+              timeout=_DISM_TIMEOUT_ANALYZE, allow_kill=True) -> tuple:
+    """
+    Запускает DISM и построчно отдаёт вывод в колбэки.
+
+    Возвращает (код возврата, весь текст вывода, была ли остановка).
+    """
+    command = [system_tool("dism.exe")] + list(args)
+    encoding = _console_encoding()
+    collected = []
+    started = time.time()
+
+    try:
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+            bufsize=-1,
+            creationflags=CREATE_NO_WINDOW,
+        )
+    except Exception as exc:
+        return -1, "{}: {}".format(i18n.t("winsxs.fail_start"), exc), False
+
+    stopped = False
+    try:
+        for line in _iter_process_lines(process.stdout, encoding):
+            collected.append(line)
+            if on_line:
+                try:
+                    on_line(line)
+                except Exception:
+                    pass
+            if on_progress:
+                percent = _progress_from_line(line)
+                if percent is not None:
+                    try:
+                        on_progress(percent)
+                    except Exception:
+                        pass
+            if stop_event is not None and stop_event.is_set():
+                stopped = True
+                if allow_kill:
+                    try:
+                        process.kill()
+                    except Exception:
+                        pass
+                    break
+            if time.time() - started > timeout:
+                try:
+                    process.kill()
+                except Exception:
+                    pass
+                collected.append(i18n.t("winsxs.fail_timeout"))
+                break
+    finally:
+        try:
+            process.stdout.close()
+        except Exception:
+            pass
+
+    try:
+        code = process.wait(timeout=60)
+    except Exception:
+        code = -1
+    return code, "\n".join(collected), stopped
+
+
+def analyze_component_store(on_line=None, on_progress=None,
+                            stop_event=None) -> dict:
+    """
+    Официальная проверка хранилища компонентов (ничего не удаляет):
+        DISM /Online /Cleanup-Image /AnalyzeComponentStore
+
+    Возвращает словарь с полями ok, reason и результатами разбора отчёта.
+    reason: no_admin | not_windows | failed | unparsed | stopped.
+    """
+    result = {
+        "ok": False, "reason": "", "code": -1, "output": "",
+        "recommended": None, "actual": None, "explorer": None,
+        "backups": None, "cache": None, "reclaimable": None,
+        "packages": None, "last_cleanup": None, "parsed": False,
+    }
+    if not IS_WINDOWS:
+        result["reason"] = "not_windows"
+        return result
+    if not is_admin():
+        result["reason"] = "no_admin"
+        return result
+
+    base = ["/Online", "/Cleanup-Image", "/AnalyzeComponentStore"]
+    # Сначала запускаем без /English: на русской системе журнал остаётся
+    # русским, а разбор всё равно работает (подписи ищутся по смыслу).
+    # Если отчёт не распознан (экзотическая локаль) — повторяем с /English,
+    # который заставляет DISM печатать подписи по-английски.
+    code, output, stopped = _run_dism(
+        base, on_line=on_line, on_progress=on_progress,
+        stop_event=stop_event, timeout=_DISM_TIMEOUT_ANALYZE)
+    report = parse_component_store_report(output)
+
+    if not report["parsed"] and code == 0 and not stopped:
+        code, output, stopped = _run_dism(
+            base + ["/English"], on_line=on_line, on_progress=on_progress,
+            stop_event=stop_event, timeout=_DISM_TIMEOUT_ANALYZE)
+        report = parse_component_store_report(output)
+
+    result.update(report)
+    result["code"] = code
+    result["output"] = output
+    if report["parsed"]:
+        result["ok"] = True
+    elif stopped:
+        result["reason"] = "stopped"
+    elif code != 0:
+        result["reason"] = "failed"
+    else:
+        result["reason"] = "unparsed"
+    return result
+
+
+def cleanup_component_store(on_line=None, on_progress=None,
+                            stop_event=None) -> dict:
+    """
+    Официальная очистка хранилища компонентов:
+        DISM /Online /Cleanup-Image /StartComponentCleanup
+
+    Без /ResetBase: удаляются устаревшие компоненты, но последнее
+    установленное обновление остаётся откатываемым.
+
+    Операцию нельзя прерывать на середине, поэтому stop_event проверяется
+    только ДО запуска — остановка посреди работы оставила бы хранилище
+    в неопределённом состоянии.
+    """
+    result = {"ok": False, "reason": "", "code": -1, "output": ""}
+    if not IS_WINDOWS:
+        result["reason"] = "not_windows"
+        return result
+    if not is_admin():
+        result["reason"] = "no_admin"
+        return result
+    if stop_event is not None and stop_event.is_set():
+        result["reason"] = "stopped"
+        return result
+
+    code, output, _ = _run_dism(
+        ["/Online", "/Cleanup-Image", "/StartComponentCleanup"],
+        on_line=on_line, on_progress=on_progress, stop_event=None,
+        timeout=_DISM_TIMEOUT_CLEAN, allow_kill=False)
+    result["code"] = code
+    result["output"] = output
+    result["ok"] = (code == 0)
+    if code != 0:
+        result["reason"] = "failed"
+    return result
 
 
 # =============================================================================
