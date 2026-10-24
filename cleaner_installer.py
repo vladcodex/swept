@@ -75,11 +75,22 @@ import subprocess
 import sys
 from urllib.parse import urlsplit
 
-try:
-    import requests
-    from requests.adapters import HTTPAdapter
-except ImportError as exc:  # pragma: no cover
-    raise ImportError("Требуется пакет requests: pip install requests") from exc
+# requests тянет за собой urllib3, ssl и ещё десяток модулей — это ~320 мс
+# на старте приложения. Сеть нужна только в момент установки, поэтому импорт
+# ленивый: см. _requests() ниже.
+_REQUESTS = None
+
+
+def _requests():
+    """Ленивый импорт requests: сеть нужна только при установке."""
+    global _REQUESTS
+    if _REQUESTS is None:
+        try:
+            import requests as _module
+        except ImportError as exc:  # pragma: no cover
+            raise ImportError("Требуется пакет requests: pip install requests") from exc
+        _REQUESTS = _module
+    return _REQUESTS
 
 try:  # pywin32 — основной способ работы с DACL (как требует задание)
     import ntsecuritycon
@@ -1021,39 +1032,53 @@ def _close_handle(handle) -> None:
 # =============================================================================
 # Сетевой слой: TLS 1.2/1.3, только HTTPS, anti-MITM
 # =============================================================================
-class HardenedTLSAdapter(HTTPAdapter):
-    """Адаптер requests с жёстким TLS и запретом небезопасных соединений."""
+_ADAPTER_CLASS = None
 
-    def __init__(self, fingerprint=None, **kwargs):
-        self._fingerprint = fingerprint
-        super().__init__(**kwargs)
 
-    def init_poolmanager(self, connections, maxsize, block=False, **kwargs):
-        context = ssl.create_default_context()
-        context.check_hostname = True
-        context.verify_mode = ssl.CERT_REQUIRED
-        # minimum_version уже отсекает SSLv3/TLS1.0/TLS1.1.
-        context.minimum_version = ssl.TLSVersion.TLSv1_2
-        try:
-            context.maximum_version = ssl.TLSVersion.TLSv1_3
-        except (AttributeError, ValueError):
-            pass
-        kwargs["ssl_context"] = context
-        if self._fingerprint:
-            kwargs["assert_fingerprint"] = self._fingerprint
-        return super().init_poolmanager(connections, maxsize, block=block, **kwargs)
+def _tls_adapter_class():
+    """Создаёт класс адаптера при первом обращении (импорт requests ленивый)."""
+    global _ADAPTER_CLASS
+    if _ADAPTER_CLASS is not None:
+        return _ADAPTER_CLASS
+
+    from requests.adapters import HTTPAdapter
+
+    class HardenedTLSAdapter(HTTPAdapter):
+        """Адаптер requests с жёстким TLS и запретом небезопасных соединений."""
+
+        def __init__(self, fingerprint=None, **kwargs):
+            self._fingerprint = fingerprint
+            super().__init__(**kwargs)
+
+        def init_poolmanager(self, connections, maxsize, block=False, **kwargs):
+            context = ssl.create_default_context()
+            context.check_hostname = True
+            context.verify_mode = ssl.CERT_REQUIRED
+            # minimum_version уже отсекает SSLv3/TLS1.0/TLS1.1.
+            context.minimum_version = ssl.TLSVersion.TLSv1_2
+            try:
+                context.maximum_version = ssl.TLSVersion.TLSv1_3
+            except (AttributeError, ValueError):
+                pass
+            kwargs["ssl_context"] = context
+            if self._fingerprint:
+                kwargs["assert_fingerprint"] = self._fingerprint
+            return super().init_poolmanager(connections, maxsize, block=block, **kwargs)
+
+    _ADAPTER_CLASS = HardenedTLSAdapter
+    return _ADAPTER_CLASS
 
 
 _SESSION = None
 
 
-def _session() -> requests.Session:
+def _session():
     global _SESSION
     if _SESSION is None:
-        session = requests.Session()
+        session = _requests().Session()
         # Не доверяем системным прокси: иначе TLS терминируется посредником.
         session.trust_env = False
-        session.mount("https://", HardenedTLSAdapter())
+        session.mount("https://", _tls_adapter_class()())
         session.headers["User-Agent"] = "Swept/1.2 (+https://github.com/vladcodex/swept)"
         _SESSION = session
     return _SESSION

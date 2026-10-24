@@ -51,6 +51,8 @@ STRINGS = {
                         "и установка программ",
         "admin.yes": "🛡  Права администратора: ЕСТЬ",
         "admin.no": "⚠  Права администратора: НЕТ",
+        "admin.chip_yes": "ADMIN",
+        "admin.chip_no": "БЕЗ ПРАВ",
         "lang.label": "Язык",
 
         # --------------------------------------------------------- вкладки
@@ -59,6 +61,47 @@ STRINGS = {
         "tab.optimize": "  ⚡ Оптимизация  ",
         "tab.log": "  📋 Журнал  ",
         "tab.schedule": "  ⏰ Расписание  ",
+
+        # --- оболочка Orbit: модули, рельсы, лента ---
+        "app.name": "SWEPT",
+        "app.version": "v1.3.0",
+        "mod.clean": "Очистка",
+        "mod.clean.sub": "Категории мусора и кэшей",
+        "mod.install": "Установка",
+        "mod.install.sub": "Каталог программ и пакеты VC++",
+        "mod.optimize": "Оптимизация",
+        "mod.optimize.sub": "Безопасные твики Windows",
+        "mod.schedule": "Расписание",
+        "mod.schedule.sub": "Тихая очистка по расписанию",
+        "mod.log": "Журнал",
+        "mod.log.sub": "История всех операций",
+        "mod.winsxs": "WinSxS",
+        "mod.winsxs.sub": "Хранилище компонентов через DISM",
+        "rail.system": "Система",
+        "rail.disk": "Диск C:",
+        "rail.temp": "Временные файлы",
+        "rail.bin": "Корзина",
+        "rail.categories": "Категорий",
+        "rail.files": "Файлов к удалению",
+        "rail.restore": "Точка восстановления",
+        "rail.total": "Освобождено всего",
+        "ribbon.back": "Модули",
+        "feed.title": "Журнал",
+        "orbit.pick": "Выберите модуль на орбите",
+        "orbit.reclaim": "Можно освободить",
+        "orbit.freed": "Освобождено",
+        "orbit.idle": "Нажмите «Анализ», чтобы начать",
+        "orbit.ready": "Готово · выберите «Очистить»",
+        "orbit.done": "Готово · всё чисто",
+        "orbit.busy": "Выполняется…",
+        "orbit.busy_sub": "Это может занять время",
+        "orbit.found": "{} категорий · {} файлов",
+        "clean.actions_hint": "Кнопки «Анализ», «Очистить» и «Стоп» — в нижней ленте.",
+        "clean.top": "Крупнейшие категории",
+        "clean.top_empty": "Появятся после анализа",
+        "winsxs.b1": "Удаляются только устаревшие компоненты и резервные копии обновлений.",
+        "winsxs.b2": "Ключ /ResetBase не используется — последнее обновление остаётся откатываемым.",
+        "winsxs.b3": "Очистку нельзя прервать: она занимает от 5 до 20 минут.",
 
         # ----------------------------- тихая очистка по расписанию
         "sched.title": "Тихая очистка по расписанию",
@@ -205,9 +248,9 @@ STRINGS = {
         "btn.select": "Выбрать",
         "btn.install_vc": "⬇  Установить всё сразу",
         "vc.label": "Visual C++ Redistributable (все версии 2005–2022, x86 и x64):",
-        "winget.checking": "Проверка установщика…",
-        "winget.ok": "Прямая установка доступна",
-        "winget.missing": "⚠  Нужны права администратора для установки",
+        "installer.checking": "Проверка установщика…",
+        "installer.ok": "Прямая установка доступна",
+        "installer.missing": "⚠  Нужны права администратора для установки",
         "pkg.not_selected": "Пакет не выбран — щёлкните строку",
         "pkg.selected": "Выбран: {}  —  {}",
         "pkg.manual": "Выбран (вручную): {}",
@@ -285,8 +328,8 @@ STRINGS = {
         "dlg.bad_number_text": "В списке {} пакетов. Введите номер от 1 до {}.",
         "dlg.empty_query_title": "Пустой запрос",
         "dlg.empty_query_text": "Введите название программы для поиска.",
-        "dlg.winget_title": "Установка",
-        "dlg.winget_text": "Безопасный установщик ещё не готов или нет прав администратора.\n"
+        "dlg.installer_title": "Установка",
+        "dlg.installer_text": "Безопасный установщик ещё не готов или нет прав администратора.\n"
                            "Запустите Swept от имени администратора и попробуйте снова.",
         "dlg.install_pkg_text": "Установить '{}'?\n\n"
                                 "Файл будет скачан с официального сайта, проверен по цифровой "
@@ -409,11 +452,9 @@ STRINGS = {
         "opt.applying_step": "Применяю {}/{}: {}",
         "opt.item_stopped": "не выполнялось",
 
-        # ------------------------------------ сообщения установщика (winget)
+        # ------------------------------------ сообщения установщика (installer)
         "inst.timeout": "Превышено время ожидания ({} сек)",
-        "inst.no_winget": "winget не найден. Установите App Installer из Microsoft Store.",
         "inst.latest": "Уже последняя версия.\n",
-        "inst.simulation": "[СИМУЛЯЦИЯ] winget {}",
         "inst.log_install": "Установка '{}'...",
         "inst.log_upgrade": "Обновление '{}'...",
         "inst.log_item": "--- {} ({}) ---",
@@ -421,8 +462,6 @@ STRINGS = {
         "inst.status_error": "ОШИБКА",
         "inst.log_upgrade_all": "Обновление всех пакетов... "
                                 "Это может занять несколько минут.",
-        "inst.undetermined": "Пакетов с неопределяемой версией: {}. winget пропускает их "
-                             "при обновлении всех; обновить можно поштучно.",
         "inst.bad_id": "Некорректный ID пакета: «{}».\n"
                        "Допустимы только латиница, цифры и символы . _ + -",
         "inst.bad_query": "Некорректный поисковый запрос: «{}».\n"
@@ -437,6 +476,8 @@ STRINGS = {
                         "and app installation",
         "admin.yes": "🛡  Administrator rights: YES",
         "admin.no": "⚠  Administrator rights: NO",
+        "admin.chip_yes": "ADMIN",
+        "admin.chip_no": "NO ADMIN",
         "lang.label": "Language",
 
         # --------------------------------------------------------- вкладки
@@ -445,6 +486,47 @@ STRINGS = {
         "tab.optimize": "  ⚡ Optimize  ",
         "tab.log": "  📋 Log  ",
         "tab.schedule": "  ⏰ Schedule  ",
+
+        # --- Orbit shell: modules, rails, ribbon ---
+        "app.name": "SWEPT",
+        "app.version": "v1.3.0",
+        "mod.clean": "Cleanup",
+        "mod.clean.sub": "Junk and cache categories",
+        "mod.install": "Install",
+        "mod.install.sub": "App catalog and VC++ packages",
+        "mod.optimize": "Optimize",
+        "mod.optimize.sub": "Safe Windows tweaks",
+        "mod.schedule": "Schedule",
+        "mod.schedule.sub": "Silent cleanup on a schedule",
+        "mod.log": "Log",
+        "mod.log.sub": "History of every operation",
+        "mod.winsxs": "WinSxS",
+        "mod.winsxs.sub": "Component store via DISM",
+        "rail.system": "System",
+        "rail.disk": "Drive C:",
+        "rail.temp": "Temp files",
+        "rail.bin": "Recycle Bin",
+        "rail.categories": "Categories",
+        "rail.files": "Files to remove",
+        "rail.restore": "Restore point",
+        "rail.total": "Freed in total",
+        "ribbon.back": "Modules",
+        "feed.title": "Log",
+        "orbit.pick": "Pick a module on the orbit",
+        "orbit.reclaim": "Reclaimable",
+        "orbit.freed": "Freed",
+        "orbit.idle": "Press Analyze to start",
+        "orbit.ready": "Ready · choose Clean",
+        "orbit.done": "Done · all clear",
+        "orbit.busy": "Working…",
+        "orbit.busy_sub": "This may take a while",
+        "orbit.found": "{} categories · {} files",
+        "clean.actions_hint": "Analyze, Clean and Stop are in the bottom ribbon.",
+        "clean.top": "Largest categories",
+        "clean.top_empty": "Appear after analysis",
+        "winsxs.b1": "Only outdated components and update backups are removed.",
+        "winsxs.b2": "/ResetBase is never used — the latest update stays rollbackable.",
+        "winsxs.b3": "Cleanup cannot be interrupted: it takes 5 to 20 minutes.",
 
         # ----------------------------- quiet scheduled cleanup
         "sched.title": "Quiet scheduled cleanup",
@@ -591,9 +673,9 @@ STRINGS = {
         "btn.select": "Select",
         "btn.install_vc": "⬇  Install all at once",
         "vc.label": "Visual C++ Redistributable (all versions 2005–2022, x86 and x64):",
-        "winget.checking": "Checking installer…",
-        "winget.ok": "Direct install available",
-        "winget.missing": "⚠  Administrator rights are required for installation",
+        "installer.checking": "Checking installer…",
+        "installer.ok": "Direct install available",
+        "installer.missing": "⚠  Administrator rights are required for installation",
         "pkg.not_selected": "No package selected — click a row",
         "pkg.selected": "Selected: {}  —  {}",
         "pkg.manual": "Selected (manual): {}",
@@ -671,8 +753,8 @@ STRINGS = {
         "dlg.bad_number_text": "The list has {} packages. Enter a number from 1 to {}.",
         "dlg.empty_query_title": "Empty query",
         "dlg.empty_query_text": "Enter an app name to search for.",
-        "dlg.winget_title": "Install",
-        "dlg.winget_text": "The secure installer is not ready yet, or administrator "
+        "dlg.installer_title": "Install",
+        "dlg.installer_text": "The secure installer is not ready yet, or administrator "
                            "rights are missing.\nRun Swept as administrator and try again.",
         "dlg.install_pkg_text": "Install '{}'?\n\n"
                                 "The file is downloaded from the official site, checked "
@@ -796,11 +878,9 @@ STRINGS = {
         "opt.applying_step": "Applying {}/{}: {}",
         "opt.item_stopped": "not applied",
 
-        # ------------------------------------ сообщения установщика (winget)
+        # ------------------------------------ сообщения установщика (installer)
         "inst.timeout": "Timed out ({} s)",
-        "inst.no_winget": "winget not found. Install App Installer from the Microsoft Store.",
         "inst.latest": "Already the latest version.\n",
-        "inst.simulation": "[SIMULATION] winget {}",
         "inst.log_install": "Installing '{}'...",
         "inst.log_upgrade": "Upgrading '{}'...",
         "inst.log_item": "--- {} ({}) ---",
@@ -808,8 +888,6 @@ STRINGS = {
         "inst.status_error": "ERROR",
         "inst.log_upgrade_all": "Upgrading all packages... "
                                 "This may take a few minutes.",
-        "inst.undetermined": "Packages with an undetectable version: {}. winget skips "
-                             "them when upgrading all; upgrade them one by one.",
         "inst.bad_id": "Invalid package ID: \u201c{}\u201d.\n"
                        "Only Latin letters, digits and . _ + - are allowed.",
         "inst.bad_query": "Invalid search query: \u201c{}\u201d.\n"
