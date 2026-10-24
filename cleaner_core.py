@@ -420,19 +420,144 @@ BROWSERS = {
     },
 }
 
-# Что именно удаляем у Chromium-браузеров (относительно папки профиля).
-CHROMIUM_CACHE_DIRS = ["Cache", "Code Cache", "GPUCache", "Media Cache"]
-CHROMIUM_HISTORY_FILES = ["History", "History-journal", "Visited Links"]
-CHROMIUM_COOKIE_FILES = [
-    os.path.join("Network", "Cookies"),
-    os.path.join("Network", "Cookies-journal"),
-    "Cookies",
-]
+# =============================================================================
+# 8.1. РАЗДЕЛЬНЫЕ НАСТРОЙКИ ОЧИСТКИ БРАУЗЕРА (как в Wise Disk Cleaner)
+# =============================================================================
+# Конкретные удаляемые пути теперь описаны в BROWSER_SUBOPTIONS (ниже) —
+# там же их можно гибко включать/выключать по отдельности.
+#
+# Каждый браузер теперь очищается не «всё сразу», а по отдельным
+# переключаемым пунктам: кэш, cookie, история, сохранённые данные форм,
+# значки сайтов и — отдельно, под защитой — сохранённые пароли. Пользователь
+# сам решает, что трогать, через галочки в интерфейсе; выбор хранится в
+# настройках и применяется и к ручной, и к запланированной очистке.
+#
+# Каждый пункт (sub-option) описывает цели (targets) относительно профиля:
+#   type  — "dir" (папка целиком, remove_root=True) или "file" (файл);
+#   name  — путь внутри профиля;
+#   root  — "profile" (chromium: внутри User Data/Profile),
+#           "local"   (firefox: LOCALAPPDATA/.../Profiles),
+#           "roam"    (firefox: APPDATA/.../Profiles).
+#   caution — True для необратимых/важных данных (пароли): по умолчанию ВЫКЛ.
+BROWSER_SUBOPTIONS = {
+    "chromium": [
+        {"key": "cache", "title": "Кэш интернета", "title_en": "Internet cache",
+         "targets": [
+             {"type": "dir", "name": "Cache", "root": "profile"},
+             {"type": "dir", "name": "Code Cache", "root": "profile"},
+             {"type": "dir", "name": "GPUCache", "root": "profile"},
+             {"type": "dir", "name": "Media Cache", "root": "profile"},
+         ]},
+        {"key": "cookies", "title": "Файлы cookie", "title_en": "Cookies",
+         "targets": [
+             {"type": "file", "name": os.path.join("Network", "Cookies"), "root": "profile"},
+             {"type": "file", "name": os.path.join("Network", "Cookies-journal"), "root": "profile"},
+             {"type": "file", "name": "Cookies", "root": "profile"},
+             {"type": "file", "name": "Cookies-journal", "root": "profile"},
+         ]},
+        {"key": "history", "title": "История посещений и загрузок",
+         "title_en": "Browsing & download history",
+         "targets": [
+             {"type": "file", "name": "History", "root": "profile"},
+             {"type": "file", "name": "History-journal", "root": "profile"},
+             {"type": "file", "name": "Visited Links", "root": "profile"},
+         ]},
+        {"key": "formdata", "title": "Сохранённые данные форм",
+         "title_en": "Saved form data",
+         "targets": [
+             {"type": "file", "name": "Web Data", "root": "profile"},
+             {"type": "file", "name": "Web Data-journal", "root": "profile"},
+         ]},
+        {"key": "favicons", "title": "Значки сайтов (favicons)",
+         "title_en": "Site icons (favicons)",
+         "targets": [
+             {"type": "file", "name": "Favicons", "root": "profile"},
+             {"type": "file", "name": "Favicons-journal", "root": "profile"},
+         ]},
+        {"key": "passwords", "title": "Сохранённые пароли", "title_en": "Saved passwords",
+         "caution": True,
+         "targets": [
+             {"type": "file", "name": "Login Data", "root": "profile"},
+             {"type": "file", "name": "Login Data-journal", "root": "profile"},
+         ]},
+    ],
+    "firefox": [
+        {"key": "cache", "title": "Кэш", "title_en": "Cache",
+         "targets": [
+             {"type": "dir", "name": "cache2", "root": "local"},
+             {"type": "dir", "name": "startupCache", "root": "local"},
+             {"type": "dir", "name": "thumbnails", "root": "local"},
+         ]},
+        {"key": "cookies", "title": "Файлы cookie", "title_en": "Cookies",
+         "targets": [
+             {"type": "file", "name": "cookies.sqlite", "root": "roam"},
+             {"type": "file", "name": "cookies.sqlite-wal", "root": "roam"},
+             {"type": "file", "name": "cookies.sqlite-shm", "root": "roam"},
+         ]},
+        {"key": "history", "title": "История посещений и загрузок",
+         "title_en": "Browsing & download history",
+         "targets": [
+             {"type": "file", "name": "places.sqlite", "root": "roam"},
+             {"type": "file", "name": "places.sqlite-wal", "root": "roam"},
+             {"type": "file", "name": "places.sqlite-shm", "root": "roam"},
+         ]},
+        {"key": "formdata", "title": "Сохранённые данные форм",
+         "title_en": "Saved form data",
+         "targets": [
+             {"type": "file", "name": "formhistory.sqlite", "root": "roam"},
+             {"type": "file", "name": "formhistory.sqlite-wal", "root": "roam"},
+             {"type": "file", "name": "formhistory.sqlite-shm", "root": "roam"},
+         ]},
+        {"key": "sitesettings", "title": "Настройки сайтов",
+         "title_en": "Site settings",
+         "targets": [
+             {"type": "file", "name": "permissions.sqlite", "root": "roam"},
+             {"type": "file", "name": "permissions.sqlite-wal", "root": "roam"},
+             {"type": "file", "name": "permissions.sqlite-shm", "root": "roam"},
+             {"type": "file", "name": "content-prefs.sqlite", "root": "roam"},
+             {"type": "file", "name": "content-prefs.sqlite-wal", "root": "roam"},
+             {"type": "file", "name": "content-prefs.sqlite-shm", "root": "roam"},
+         ]},
+        {"key": "passwords", "title": "Сохранённые пароли", "title_en": "Saved passwords",
+         "caution": True,
+         "targets": [
+             {"type": "file", "name": "logins.json", "root": "roam"},
+             {"type": "file", "name": "logins-backup.json", "root": "roam"},
+             {"type": "file", "name": "key4.db", "root": "roam"},
+             {"type": "file", "name": "key3.db", "root": "roam"},
+         ]},
+    ],
+}
 
-# Что удаляем у Firefox (кэш — в LOCALAPPDATA, история/куки — в APPDATA).
-FIREFOX_CACHE_DIRS = ["cache2", "startupCache", "thumbnails"]
-FIREFOX_HISTORY_FILES = ["places.sqlite", "places.sqlite-wal", "places.sqlite-shm"]
-FIREFOX_COOKIE_FILES = ["cookies.sqlite", "cookies.sqlite-wal", "cookies.sqlite-shm"]
+
+def get_browser_suboptions(key: str) -> list:
+    """Возвращает список под-опций очистки для браузера (по ключу категории)."""
+    kind = BROWSERS.get(key, {}).get("kind")
+    return BROWSER_SUBOPTIONS.get(kind, [])
+
+
+def default_browser_suboptions(key: str) -> set:
+    """
+    Набор под-опций, включённых по умолчанию. Из соображений безопасности
+    по умолчанию очищается ТОЛЬКО кэш — cookie, история, формы, пароли и
+    прочие личные данные пользователь включает сам, с предупреждением.
+    """
+    return {"cache"}
+
+
+def is_browser_suboption_caution(sub: dict) -> bool:
+    """
+    Под-опция требует предупреждения перед включением: либо помечена
+    явно (caution), либо это не кэш (удаляет личные данные браузера).
+    """
+    return bool(sub.get("caution")) or sub.get("key") != "cache"
+
+
+def _resolve_browser_selected(key: str, selected) -> set:
+    """Нормализует выбор под-опций: None → умолчание, иначе заданный набор."""
+    if selected is None:
+        return default_browser_suboptions(key)
+    return set(selected)
 
 
 def list_running_processes() -> set:
@@ -652,9 +777,14 @@ def get_category(key: str) -> dict | None:
     return None
 
 
-def get_jobs(key: str) -> list:
+def get_jobs(key: str, selected=None) -> list:
     """
     Строит список заданий удаления для категории.
+
+    Для браузеров `selected` — набор включённых под-опций (ключи из
+    BROWSER_SUBOPTIONS, например {"cache","cookies"}). Если None — берётся
+    умолчание (default_browser_suboptions). Для остальных категорий
+    параметр игнорируется.
 
     Каждое задание — словарь с полем "type":
         * "dir"     — удалить содержимое каталога (сам каталог остаётся);
@@ -699,36 +829,50 @@ def get_jobs(key: str) -> list:
         jobs.append({"type": "recycle"})
 
     # ---------- КЭШ БРАУЗЕРОВ ----------
+    # Только выбранные под-опции (selected) — иначе умолчание (всё, кроме
+    # сохранённых паролей). Это и есть «настройки как в Wise Disk Cleaner».
     elif key in ("chrome", "yandex", "edge"):
+        selected = _resolve_browser_selected(key, selected)
+        subs = get_browser_suboptions(key)
+        active = {s["key"] for s in subs if s["key"] in selected}
         user_data = BROWSERS[key]["user_data"](env)
         for profile in get_chromium_profiles(user_data):
-            # кэш (папки). remove_root=True — саму папку кэша тоже можно удалить
-            # (браузер создаст её заново), т.к. это НЕ системный каталог.
-            for cache_dir in CHROMIUM_CACHE_DIRS:
-                jobs.append({"type": "dir", "path": os.path.join(profile, cache_dir),
-                             "remove_root": True,
-                             "label": os.path.basename(profile) + "\\" + cache_dir})
-            # история (файлы)
-            for fname in CHROMIUM_HISTORY_FILES:
-                jobs.append({"type": "file", "path": os.path.join(profile, fname),
-                             "label": os.path.basename(profile) + "\\History"})
-            # cookies (файлы)
-            for fname in CHROMIUM_COOKIE_FILES:
-                jobs.append({"type": "file", "path": os.path.join(profile, fname),
-                             "label": os.path.basename(profile) + "\\Cookies"})
+            for sub in subs:
+                if sub["key"] not in active:
+                    continue
+                for t in sub["targets"]:
+                    if t["type"] == "dir":
+                        jobs.append({"type": "dir",
+                                     "path": os.path.join(profile, t["name"]),
+                                     "remove_root": True,
+                                     "label": os.path.basename(profile) + "\\" + t["name"]})
+                    else:
+                        jobs.append({"type": "file",
+                                     "path": os.path.join(profile, t["name"]),
+                                     "label": os.path.basename(profile) + "\\" + t["name"]})
 
     elif key == "firefox":
+        selected = _resolve_browser_selected(key, selected)
+        subs = get_browser_suboptions(key)
+        active = {s["key"] for s in subs if s["key"] in selected}
         for roam_prof, local_prof in get_firefox_profiles(env):
-            for cache_dir in FIREFOX_CACHE_DIRS:
-                jobs.append({"type": "dir", "path": os.path.join(local_prof, cache_dir),
-                             "remove_root": True,
-                             "label": "cache2"})
-            for fname in FIREFOX_HISTORY_FILES:
-                jobs.append({"type": "file", "path": os.path.join(roam_prof, fname),
-                             "label": "places.sqlite"})
-            for fname in FIREFOX_COOKIE_FILES:
-                jobs.append({"type": "file", "path": os.path.join(roam_prof, fname),
-                             "label": "cookies.sqlite"})
+            for sub in subs:
+                if sub["key"] not in active:
+                    continue
+                for t in sub["targets"]:
+                    if t["root"] == "local":
+                        base = local_prof
+                    else:  # "roam" — файлы истории/куки/паролей в APPDATA
+                        base = roam_prof
+                    if t["type"] == "dir":
+                        jobs.append({"type": "dir",
+                                     "path": os.path.join(base, t["name"]),
+                                     "remove_root": True,
+                                     "label": os.path.basename(base) + "\\" + t["name"]})
+                    else:
+                        jobs.append({"type": "file",
+                                     "path": os.path.join(base, t["name"]),
+                                     "label": os.path.basename(base) + "\\" + t["name"]})
 
     # ---------- ИГРОВЫЕ ЛАУНЧЕРЫ -------------------------------------------
     # Удаляются ТОЛЬКО кэш/логи/temp и папки незавершённых загрузок.
@@ -784,7 +928,7 @@ def get_jobs(key: str) -> list:
     return jobs
 
 
-def build_allowed(key: str) -> dict:
+def build_allowed(key: str, selected=None) -> dict:
     """
     Строит БЕЛЫЙ СПИСОК для категории — то, что реально разрешено удалять.
     Возвращает {"dirs": set(), "files": set()} с нормализованными путями.
@@ -794,7 +938,7 @@ def build_allowed(key: str) -> dict:
     в белый список не попадают — см. is_sane_root().
     """
     dirs, files = set(), set()
-    for job in get_jobs(key):
+    for job in get_jobs(key, selected):
         jtype = job.get("type")
         path = job.get("path") or ""
         if jtype in ("dir", "glob"):
@@ -922,7 +1066,7 @@ def _collect_glob(root: str, patterns: list, result: dict) -> None:
             result["total_count"] += 1
 
 
-def scan_category(key: str, on_log=None, stop_event=None) -> dict:
+def scan_category(key: str, on_log=None, stop_event=None, selected=None) -> dict:
     """
     Сканирует одну категорию БЕЗ удаления.
 
@@ -935,6 +1079,7 @@ def scan_category(key: str, on_log=None, stop_event=None) -> dict:
           "total_count": int,
           "recycle": None | {"size": int, "count": int},
           "errors": [(путь, текст_ошибки), ...],
+          "selected": set | None,          # выбранные под-опции (для браузеров)
         }
     """
     result = {
@@ -945,9 +1090,10 @@ def scan_category(key: str, on_log=None, stop_event=None) -> dict:
         "total_count": 0,
         "recycle": None,
         "errors": [],
+        "selected": selected,
     }
 
-    for job in get_jobs(key):
+    for job in get_jobs(key, selected):
         if stop_event is not None and stop_event.is_set():
             break
         jtype = job.get("type")
@@ -1001,8 +1147,14 @@ def scan_category(key: str, on_log=None, stop_event=None) -> dict:
     return result
 
 
-def scan_categories(keys, on_log=None, on_status=None, stop_event=None) -> dict:
-    """Сканирует список категорий. Возвращает {key: результат_сканирования}."""
+def scan_categories(keys, on_log=None, on_status=None, stop_event=None,
+                    selected_map=None) -> dict:
+    """
+    Сканирует список категорий. Возвращает {key: результат_сканирования}.
+
+    `selected_map` — необязательный {ключ_категории: набор_подопций}
+    для браузеров (значение None → умолчание).
+    """
     results = {}
     total = len(keys)
     for index, key in enumerate(keys, start=1):
@@ -1014,7 +1166,9 @@ def scan_categories(keys, on_log=None, on_status=None, stop_event=None) -> dict:
             on_status(i18n.t("core.scanning", title, index, total))
         if on_log:
             on_log("─── {} ───".format(title))
-        results[key] = scan_category(key, on_log=on_log, stop_event=stop_event)
+        sel = selected_map.get(key) if selected_map else None
+        results[key] = scan_category(key, on_log=on_log, stop_event=stop_event,
+                                     selected=sel)
     return results
 
 
@@ -1073,7 +1227,7 @@ def clean_scan_result(result: dict, dry_run: bool = False, on_log=None,
     """
     key = result.get("key")
     if allowed is None:
-        allowed = build_allowed(key)
+        allowed = build_allowed(key, result.get("selected"))
 
     stats = {"removed": 0, "skipped": 0, "errors": 0, "freed": 0, "recycle_done": None}
 

@@ -197,6 +197,47 @@ def registry_key_path() -> str:
     return "HKEY_CURRENT_USER\\" + REG_PATH
 
 
+# ===========================================================================
+# НАСТРОЙКИ ОЧИСТКИ БРАУЗЕРОВ (раздельные под-опции: кэш/cookie/история/…)
+# ===========================================================================
+# Хранятся как строка "cache,cookies,history" в параметре
+# "BrowserOptions_<ключ_браузера>" (chrome/yandex/edge/firefox). Если записи
+# нет — используется умолчание ядра (только кэш).
+_BROWSER_OPTS_PREFIX = "BrowserOptions_"
+
+
+def _parse_browser_options(text: str):
+    """Разбирает逗号-разделённую строку в множество ключей. None — пусто."""
+    if not text:
+        return None
+    parts = [p.strip() for p in text.split(",") if p.strip()]
+    return set(parts) if parts else None
+
+
+def get_browser_options(key: str) -> set:
+    """
+    Возвращает множество включённых под-опций для браузера.
+
+    Если в хранилище ничего нет — умолчание ядра (default_browser_suboptions,
+    т.е. только кэш). Невалидные ключи отбрасываются.
+    """
+    import cleaner_core  # локально — чтобы не было циклического импорта
+    raw = _settings.get(_BROWSER_OPTS_PREFIX + key, "")
+    parsed = _parse_browser_options(raw)
+    if parsed is None:
+        return cleaner_core.default_browser_suboptions(key)
+    valid = {s["key"] for s in cleaner_core.get_browser_suboptions(key)}
+    result = {k for k in parsed if k in valid}
+    # Если всё отфильтровалось (битые данные) — возвращаем умолчание.
+    return result if result else cleaner_core.default_browser_suboptions(key)
+
+
+def set_browser_options(key: str, options) -> bool:
+    """Сохраняет множество включённых под-опций браузера. True — записано."""
+    value = ",".join(sorted(set(options)))
+    return _settings.set(_BROWSER_OPTS_PREFIX + key, value)
+
+
 if __name__ == "__main__":  # небольшая самопроверка из командной строки
     print("Ветка реестра :", registry_key_path())
     print("Язык сейчас   :", load_language())
