@@ -53,6 +53,7 @@ import subprocess
 import sys
 import time
 from ctypes import wintypes
+from functools import lru_cache
 
 import cleaner_i18n as i18n
 
@@ -83,8 +84,15 @@ PROTECTED_WINDOWS_SUBDIRS = [
 PROTECTED_DIR_NAMES = {"$recycle.bin", "system volume information"}
 
 
-def _protected_paths() -> list:
-    """Нормализованный список защищённых каталогов (строится из среды)."""
+@lru_cache(maxsize=1)
+def _protected_paths() -> tuple:
+    """
+    Нормализованный список защищённых каталогов (строится из среды).
+
+    Список зависит только от переменных окружения, которые за время работы
+    программы не меняются, поэтому он кешируется: иначе он пересобирался бы
+    на каждый удаляемый файл (около 28 мкс на ровном месте).
+    """
     env = get_env_paths()
     windir = env.get("windir") or r"C:\Windows"
     program_files = os.environ.get("ProgramFiles") or r"C:\Program Files"
@@ -98,11 +106,12 @@ def _protected_paths() -> list:
         os.path.join(program_data, "Microsoft", "Windows", "Start Menu"),
         os.path.join(program_data, "Microsoft", "Windows", "SystemData"),
     ]
-    return [_norm(root) for root in roots]
+    return tuple(_norm(root) for root in roots)
 
 
-def _protected_exceptions() -> list:
-    """Нормализованный список разрешённых подпапок внутри защищённых зон."""
+@lru_cache(maxsize=1)
+def _protected_exceptions() -> tuple:
+    """Нормализованный список разрешённых подпапок внутри защищённых зон (кеш)."""
     env = get_env_paths()
     windir = env.get("windir") or r"C:\Windows"
     steam_root = os.path.join(env["programfiles_x86"], "Steam")
@@ -117,7 +126,18 @@ def _protected_exceptions() -> list:
     # поэтому игры, сохранения и метаданные не затрагиваются.
     paths += [os.path.join(steam_root, sub) for sub in
               ("appcache", "cache", "logs", "tmp", os.path.join("steamapps", "downloading"))]
-    return [_norm(path) for path in paths]
+    return tuple(_norm(path) for path in paths)
+
+
+def reset_protection_cache() -> None:
+    """
+    Сбрасывает кеш списков защиты.
+
+    Нужен только тестам и сценариям, которые меняют переменные окружения
+    на лету; в обычной работе вызывать не требуется.
+    """
+    _protected_paths.cache_clear()
+    _protected_exceptions.cache_clear()
 
 
 # --- Критические ФАЙЛЫ, которые нельзя удалять ни при каких условиях ------
@@ -783,7 +803,10 @@ def build_allowed(key: str) -> dict:
         elif jtype == "file":
             if path and os.path.isabs(path) and not is_reparse_point(path):
                 files.add(_norm(path))
-    return {"dirs": dirs, "files": files}
+    # Реальные пути разрешённых каталогов считаем один раз: раскрытие
+    # junction'ов на каждый файл стоило около 85 мкс на файл.
+    real_dirs = {d: _real_norm(d) for d in dirs}
+    return {"dirs": dirs, "files": files, "real_dirs": real_dirs}
 
 
 def _in_allowed(path: str, allowed: dict) -> bool:
@@ -799,11 +822,13 @@ def _in_allowed(path: str, allowed: dict) -> bool:
         return False
     if p in allowed.get("files", set()):
         return True
+    real_dirs = allowed.get("real_dirs") or {}
     for d in allowed.get("dirs", set()):
         if p == d or p.startswith(d + os.sep):
             # Ссылка внутри каталога могла увести за его пределы — сверяем
             # реальные пути, а не только строковое совпадение.
-            real_path, real_dir = _real_norm(path), _real_norm(d)
+            real_path = _real_norm(path)
+            real_dir = real_dirs.get(d) or _real_norm(d)
             if not (real_path == real_dir or real_path.startswith(real_dir + os.sep)):
                 return False
             # Последняя линия защиты: в личных папках не удаляем ничего.
