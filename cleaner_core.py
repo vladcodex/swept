@@ -841,42 +841,85 @@ def _in_allowed(path: str, allowed: dict) -> bool:
 # =============================================================================
 
 def _collect_dir(root: str, result: dict) -> None:
-    """Рекурсивно собирает файлы и подкаталоги внутри `root`."""
-    def _on_error(err):
-        result["errors"].append((getattr(err, "filename", ""), str(err)))
+    """Рекурсивно собирает файлы и подкаталоги внутри `root`.
 
-    for dirpath, dirnames, filenames in os.walk(root, onerror=_on_error):
-        # В симлинки и junction не заходим: за ними может быть любой каталог,
-        # в том числе вне разрешённой зоны.
-        dirnames[:] = [name for name in dirnames
-                       if not is_reparse_point(os.path.join(dirpath, name))]
-        for fname in filenames:
-            full = os.path.join(dirpath, fname)
-            if is_reparse_point(full):
+    Обход идёт на os.scandir, а не на os.walk: у каждой записи размер и
+    атрибут reparse-точки берутся из одного stat (он кэшируется в записи),
+    тогда как раньше на каждый файл приходилось три системных вызова —
+    lstat для проверки ссылки, stat для размера и ещё один для islink.
+    На больших деревьях (кэш обновлений, C:\\Windows) это в разы меньше
+    обращений к диску.
+    """
+    stack = [root]
+    while stack:
+        current = stack.pop()
+        try:
+            entries = list(os.scandir(current))
+        except OSError as err:
+            # Ошибка доступа к каталогу — запоминаем и идём дальше.
+            result["errors"].append(
+                (getattr(err, "filename", None) or current, str(err)))
+            continue
+        for entry in entries:
+            try:
+                info = entry.stat(follow_symlinks=False)
+            except OSError:
+                info = None
+            # Точки повторной обработки (симлинки, junction) не обходим
+            # и не трогаем: за ними может быть что угодно.
+            if info is not None and (
+                    getattr(info, "st_file_attributes", 0)
+                    & FILE_ATTRIBUTE_REPARSE_POINT):
                 continue
-            size = _safe_getsize(full)
-            result["files"].append((full, size))
+            try:
+                is_dir = entry.is_dir(follow_symlinks=False)
+            except OSError:
+                continue
+            if is_dir:
+                result["dirs"].append(entry.path)
+                stack.append(entry.path)
+                continue
+            size = info.st_size if info is not None else 0
+            result["files"].append((entry.path, size))
             result["total_size"] += size
             result["total_count"] += 1
-        for dname in dirnames:
-            result["dirs"].append(os.path.join(dirpath, dname))
 
 
 def _collect_glob(root: str, patterns: list, result: dict) -> None:
     """Собирает файлы, подходящие под маски (например *.log, *.dmp)."""
     lowered = [p.lower() for p in patterns]
-    for dirpath, dirnames, filenames in os.walk(root, onerror=lambda e: None):
-        dirnames[:] = [name for name in dirnames
-                       if not is_reparse_point(os.path.join(dirpath, name))]
-        for fname in filenames:
-            if any(fnmatch.fnmatch(fname.lower(), pat) for pat in lowered):
-                full = os.path.join(dirpath, fname)
-                if is_reparse_point(full):
-                    continue
-                size = _safe_getsize(full)
-                result["files"].append((full, size))
-                result["total_size"] += size
-                result["total_count"] += 1
+    stack = [root]
+    while stack:
+        current = stack.pop()
+        try:
+            entries = list(os.scandir(current))
+        except OSError:
+            # Здесь ошибки обхода не нужны: категория «логи и дампы»
+            # заведомо проходит по системным папкам с закрытым доступом.
+            continue
+        for entry in entries:
+            try:
+                info = entry.stat(follow_symlinks=False)
+            except OSError:
+                info = None
+            if info is not None and (
+                    getattr(info, "st_file_attributes", 0)
+                    & FILE_ATTRIBUTE_REPARSE_POINT):
+                continue
+            try:
+                is_dir = entry.is_dir(follow_symlinks=False)
+            except OSError:
+                continue
+            if is_dir:
+                stack.append(entry.path)
+                continue
+            name = entry.name.lower()
+            if not any(fnmatch.fnmatch(name, pat) for pat in lowered):
+                continue
+            size = info.st_size if info is not None else 0
+            result["files"].append((entry.path, size))
+            result["total_size"] += size
+            result["total_count"] += 1
 
 
 def scan_category(key: str, on_log=None, stop_event=None) -> dict:
@@ -1036,11 +1079,18 @@ def clean_scan_result(result: dict, dry_run: bool = False, on_log=None,
 
     files = result.get("files", [])
     total = len(files)
+    last_emit = 0.0
     for index, (path, size) in enumerate(files, start=1):
         if stop_event is not None and stop_event.is_set():
             break
         if on_progress:
-            on_progress(index, total)
+            # Не чаще 20 раз в секунду. Раньше сигнал уходил на каждый файл,
+            # и на категории в десятки тысяч файлов очередь сообщений росла
+            # быстрее, чем интерфейс успевал её разбирать.
+            now = time.monotonic()
+            if index == total or now - last_emit >= 0.05:
+                last_emit = now
+                on_progress(index, total)
 
         status = safe_delete_file(path, allowed, dry_run=dry_run)
         if status == "ok":

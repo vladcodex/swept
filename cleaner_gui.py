@@ -9,7 +9,7 @@ cleaner_gui.py — ГРАФИЧЕСКИЙ ИНТЕРФЕЙС (CustomTkinter) д�
     * Переключатель языка (Русский / English), выбор сохраняется в реестре.
     * Вкладка «Очистка»: чек-боксы категорий, кнопки «Анализ»/«Очистить»,
       переключатель «Только сканирование», прогресс-бар, статус.
-    * Вкладка «Установка»: поиск программ через winget, наборы популярных
+    * Вкладка «Установка»: поиск программ в каталоге, наборы популярных
       приложений с выбором галочками, установка/обновление пакета,
       обновление всех пакетов.
     * Вкладка «Оптимизация»: безопасные настройки Windows по группам,
@@ -29,13 +29,16 @@ from __future__ import annotations
 
 import copy
 import datetime
+import math
 import os
 import queue
+import shutil
 import subprocess
 import sys
 import tempfile
 import threading
 import tkinter as tk
+from collections import deque
 from tkinter import messagebox
 
 try:
@@ -55,18 +58,28 @@ import cleaner_settings as settings
 # НАСТРОЙКИ ВНЕШНЕГО ВИДА
 # =============================================================================
 
-COLOR_BG = "#12131a"
-COLOR_CARD = "#1c1e2a"
-COLOR_CARD_2 = "#242736"
+COLOR_BG = "#0c0b14"
+COLOR_CARD = "#15132a"
+COLOR_CARD_2 = "#1e1b38"
 COLOR_ACCENT = "#3b82f6"
 COLOR_ACCENT_HOVER = "#2f6fd0"
 COLOR_GREEN = "#22c55e"
 COLOR_GREEN_HOVER = "#1ea34c"
 COLOR_RED = "#ef4444"
 COLOR_WARN = "#f59e0b"
-COLOR_TEXT = "#e5e7eb"
-COLOR_MUTED = "#9ca3af"
+COLOR_TEXT = "#e9e6f7"
+COLOR_MUTED = "#9b96b8"
 COLOR_ROW_SELECTED = "#1f3b63"   # фон выбранной строки списка пакетов
+COLOR_MINT = "#57ffc6"           # акцент орбиты и телеметрии
+COLOR_VIOLET = "#a98bff"         # второй акцент бренда (знак, кольцо, вердикты)
+COLOR_LINE = "#2a2650"           # тонкие обводки панелей
+
+# Ширина боковых рельсов новой оболочки (орбита в центре).
+RAIL_LEFT = 212
+RAIL_RIGHT = 252
+
+# Порядок узлов на орбите: совпадает с порядком панелей модулей.
+MODULE_KEYS = ("clean", "install", "optimize", "schedule", "log", "winsxs")
 
 MAX_LOG_LINES = 3000
 # Сколько строк списка пакетов реально создаётся в интерфейсе.
@@ -95,6 +108,39 @@ def _save_language(code: str) -> None:
         pass
 
 
+def _resource_path(name: str) -> str | None:
+    """Путь к файлу, положенному рядом с программой.
+
+    В собранном exe файлы лежат во временной папке PyInstaller (sys._MEIPASS),
+    при запуске из исходников — в папке проекта. Возвращает None, если файла
+    нет: иконка окна — украшение, а не условие запуска.
+    """
+    bases = []
+    bundle = getattr(sys, "_MEIPASS", None)
+    if bundle:
+        bases.append(bundle)
+    bases.append(os.path.dirname(os.path.abspath(__file__)))
+    for base in bases:
+        path = os.path.join(base, name)
+        if os.path.isfile(path):
+            return path
+    return None
+
+
+# Окно выбора набора: сколько строк списка показываем до появления прокрутки,
+# и примерная высота одной строки (имя + ID пакета).
+MAX_VISIBLE_ROWS = 7
+ROW_H = 46
+
+# Отступы в окне выбора набора. Высота окна считается по ним, поэтому
+# менять нужно здесь, а не в самой вёрстке.
+PAD_WRAP = 12           # рама окна от краёв
+PAD_TITLE = (12, 2)     # заголовок набора
+PAD_HINT = (0, 8)       # подсказка под заголовком
+PAD_LIST = (0, 8)       # список пакетов
+PAD_BUTTONS = (0, 12)   # ряд кнопок внизу
+
+
 class PresetDialog(ctk.CTkToplevel):
     """Окно выбора программ из набора популярных приложений.
 
@@ -112,31 +158,66 @@ class PresetDialog(ctk.CTkToplevel):
         self._rows = []          # [(название, ID пакета, BooleanVar), ...]
 
         self.title(i18n.t("presets.dialog_title", i18n.fld(preset, "title")))
-        # Высота зависит от числа программ в наборе: без пустого места снизу.
-        height = 170 + min(len(preset["packages"]), 6) * 46
-        self.geometry("560x{}".format(height))
+        # Ширина 600: ряд кнопок (≈522 px) не должен вылезать за край.
+        # Высоту считаем по реальному содержимому в _fit_size().
+        self.geometry("600x520")
         self.resizable(False, False)
         self.configure(fg_color=COLOR_BG)
         # Окно модальное относительно главного: transient + grab_set ниже.
         self.transient(master)
 
         wrap = ctk.CTkFrame(self, fg_color=COLOR_CARD_2, corner_radius=12)
-        wrap.pack(fill="both", expand=True, padx=12, pady=12)
+        wrap.pack(fill="both", expand=True, padx=PAD_WRAP, pady=PAD_WRAP)
 
         ctk.CTkLabel(wrap, text=i18n.fld(preset, "title"),
                      font=ctk.CTkFont(size=15, weight="bold"),
                      text_color=COLOR_TEXT, anchor="w", height=22
-                     ).pack(fill="x", padx=14, pady=(12, 2))
+                     ).pack(fill="x", padx=14, pady=PAD_TITLE)
         ctk.CTkLabel(wrap, text=i18n.t("presets.dialog_hint"),
                      font=ctk.CTkFont(size=11), text_color=COLOR_MUTED,
                      justify="left", anchor="w", wraplength=500, height=16
-                     ).pack(fill="x", padx=14, pady=(0, 8))
+                     ).pack(fill="x", padx=14, pady=PAD_HINT)
 
-        scroll = ctk.CTkScrollableFrame(
-            wrap, fg_color=COLOR_BG, corner_radius=10,
-            scrollbar_button_color=COLOR_CARD_2,
-            scrollbar_button_hover_color=COLOR_ACCENT)
-        scroll.pack(fill="both", expand=True, padx=14, pady=(0, 8))
+        # Ряд кнопок упаковываем ПЕРВЫМ и снизу: так он забирает своё
+        # место до того, как список попросит пространство, и не исчезает
+        # даже в самом коротком наборе.
+        buttons = ctk.CTkFrame(wrap, fg_color="transparent")
+        buttons.pack(fill="x", side="bottom", padx=14, pady=PAD_BUTTONS)
+
+        ctk.CTkButton(buttons, text=i18n.t("presets.select_all"),
+                      width=130, height=30, fg_color=COLOR_CARD,
+                      hover_color=COLOR_ACCENT,
+                      command=lambda: self._set_all(True)).pack(side="left")
+        ctk.CTkButton(buttons, text=i18n.t("presets.select_none"),
+                      width=110, height=30, fg_color=COLOR_CARD,
+                      hover_color=COLOR_ACCENT,
+                      command=lambda: self._set_all(False)).pack(side="left", padx=6)
+
+        self.install_btn = ctk.CTkButton(
+            buttons, text=i18n.t("presets.install_selected", len(preset["packages"])),
+            width=170, height=30,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=COLOR_GREEN, hover_color=COLOR_GREEN_HOVER,
+            command=self._accept)
+        self.install_btn.pack(side="right")
+        ctk.CTkButton(buttons, text=i18n.t("presets.close"), width=100, height=30,
+                      fg_color=COLOR_CARD, hover_color=COLOR_RED,
+                      command=self.destroy).pack(side="right", padx=6)
+
+        # Список пакетов. У CTkScrollableFrame минимальная высота около
+        # 220 px — её задаёт полоса прокрутки, — поэтому короткий список
+        # рисуем в обычной рамке: она обжимается по содержимому, без
+        # пустого места и без лишней полосы прокрутки.
+        total = len(preset["packages"])
+        if total <= MAX_VISIBLE_ROWS:
+            scroll = ctk.CTkFrame(wrap, fg_color=COLOR_BG, corner_radius=10)
+        else:
+            scroll = ctk.CTkScrollableFrame(
+                wrap, height=MAX_VISIBLE_ROWS * ROW_H + 6,
+                fg_color=COLOR_BG, corner_radius=10,
+                scrollbar_button_color=COLOR_CARD_2,
+                scrollbar_button_hover_color=COLOR_ACCENT)
+        scroll.pack(fill="x", padx=14, pady=PAD_LIST)
 
         for name, pkg_id in preset["packages"]:
             var = tk.BooleanVar(value=True)
@@ -154,33 +235,24 @@ class PresetDialog(ctk.CTkToplevel):
                          text_color=COLOR_MUTED, anchor="w", height=14
                          ).pack(anchor="w", padx=36, pady=(0, 4))
 
-        buttons = ctk.CTkFrame(wrap, fg_color="transparent")
-        buttons.pack(fill="x", padx=14, pady=(0, 12))
-
-        ctk.CTkButton(buttons, text=i18n.t("presets.select_all"),
-                      width=130, height=30, fg_color=COLOR_CARD,
-                      hover_color=COLOR_ACCENT,
-                      command=lambda: self._set_all(True)).pack(side="left")
-        ctk.CTkButton(buttons, text=i18n.t("presets.select_none"),
-                      width=110, height=30, fg_color=COLOR_CARD,
-                      hover_color=COLOR_ACCENT,
-                      command=lambda: self._set_all(False)).pack(side="left", padx=6)
-
-        self.install_btn = ctk.CTkButton(
-            buttons, text=i18n.t("presets.install_selected", len(self._rows)),
-            width=170, height=30,
-            font=ctk.CTkFont(size=12, weight="bold"),
-            fg_color=COLOR_GREEN, hover_color=COLOR_GREEN_HOVER,
-            command=self._accept)
-        self.install_btn.pack(side="right")
-        ctk.CTkButton(buttons, text=i18n.t("presets.close"), width=100, height=30,
-                      fg_color=COLOR_CARD, hover_color=COLOR_RED,
-                      command=self.destroy).pack(side="right", padx=6)
-
         self._refresh_count()
+        self._fit_size()
         self.protocol("WM_DELETE_WINDOW", self.destroy)
         self.bind("<Escape>", lambda event: self.destroy())
         self.after(60, self._center_and_focus)
+
+    def _fit_size(self):
+        """Подгоняет высоту окна под реальное содержимое.
+
+        Высота считается не по формуле, а по фактическим размерам
+        виджетов: так окно всегда точно вмещает шапку, список и ряд
+        кнопок — ничего не обрезается и ничего не болтается. Нижняя
+        граница — только страховка на случай пустого списка.
+        """
+        self.update_idletasks()
+        content = max(self.winfo_reqheight(), 1)
+        height = max(220, min(content, 780))
+        self.geometry("600x{}".format(height))
 
     # ---------------------------------------------------------- вспомогательное
     def _set_all(self, value: bool):
@@ -240,33 +312,41 @@ class CleanerApp(ctk.CTk):
         i18n.set_language(_load_saved_language())
 
         self.title(i18n.t("app.title"))
-        self.geometry("1060x740")
-        # Минимум подобран под колонку наборов: при меньшей ширине
-        # обрезаются подписи на вкладке «Установка».
-        self.minsize(960, 660)
+        # Оболочка Orbit: два рельса и орбита между ними. Ширина подобрана так,
+        # чтобы панель очистки (380 px категорий + управление) не сжималась.
+        self.geometry("1360x820")
+        # Минимальная ширина — по фактической вёрстке: два рельса (212 + 252)
+        # и колонки модуля очистки (380 + 330). При 1180 правый рельс обрезался.
+        self.minsize(1260, 700)
         self.configure(fg_color=COLOR_BG)
+        self._apply_window_icon()
 
         # --- Состояние ---
         self.vars = {}
         self.scan_results = {}
+        # Режим «только сканирование» живёт дольше одного построения панели:
+        # модуль очистки создаётся лениво, а флаг нужен и до его открытия.
+        self.scan_only_var = tk.BooleanVar(value=False)
         self.running = False
         self.stop_event = threading.Event()
         self.msg_queue = queue.Queue()
         self.total_freed = 0
-        self.installer_results = []   # результаты поиска winget
+        self.installer_results = []   # результаты поиска установщика
         self.selected_pkg = None      # выбранный пакет для установки
         self.pkg_rows = []            # виджеты строк списка пакетов
         self.pkg_cells = []           # текстовые ячейки каждой строки
         self.selected_row = None      # индекс подсвеченной строки
         self._info_widgets = {}       # виджеты-подписи категорий (key -> label)
         self.pkg_header = None        # шапка таблицы пакетов (вне списка строк)
-        self.winget_available = None  # None/True/False — доступность winget
+        self.installer_available = None  # None/True/False — готовность установщика (права админа)
         self.opt_vars = {}            # чек-боксы вкладки «Оптимизация»
         self.opt_os_label = None      # подпись про версию Windows
         self._closing = False         # флаг закрытия окна
         self._admin_ok = None         # кэш проверки прав администратора
         self._admin_warned = False    # предупреждение показано только один раз
         self._tab_index = 0           # активная вкладка (для смены языка)
+        self.log_box = None           # поле журнала (строится лениво)
+        self._log_backlog = []        # строки, накопленные до его открытия
         self._lang_switch = None      # выпадающий список языков
         self._lang_label = None       # подпись «Язык» рядом со списком
         self._total_text = None       # текст «Освобождено…» с учётом режима
@@ -278,6 +358,17 @@ class CleanerApp(ctk.CTk):
         self.winsxs_check_btn = None
         self.winsxs_clean_btn = None
         self.winsxs_progress = None
+
+        # --- Состояние оболочки Orbit ---
+        self._current_module = None   # None — открыта орбита, иначе номер модуля
+        self._module_frames = []      # панели модулей внутри сцены (None — ещё не построена)
+        self._module_builders = []    # строители панелей, в порядке MODULE_KEYS
+        self._node_hits = []          # (x, y, r, index) для кликов по орбите
+        self._orbit_progress = 0.0    # дуга прогресса вокруг ядра
+        self._core_scheduled = False  # перерисовка центра уже запланирована
+        self._feed_lines = deque(maxlen=7)   # короткая лента в правом рельсе
+        self._feed_scheduled = False
+        self._rail = {}
 
         # --- Состояние планировщика «тихой очистки по расписанию» ---
         self.schedule_stop_event = threading.Event()
@@ -298,9 +389,7 @@ class CleanerApp(ctk.CTk):
         self._weekday_by_label = {}
 
         # --- Построение интерфейса ---
-        self._build_header()
-        self._build_tabs()
-        self._build_footer()
+        self._build_shell()
 
         self.after(100, self._poll_queue)
         self.after(300, self._check_admin_warning)
@@ -312,44 +401,76 @@ class CleanerApp(ctk.CTk):
         if self._schedule_enabled():
             self._maybe_start_scheduler()
 
+    # ============================================================== ИКОНКА
+    def _apply_window_icon(self) -> None:
+        """Ставит иконку окна из PNG-логотипа программы.
+
+        Tk на Windows не читает .ico через ``tk.PhotoImage`` и игнорирует
+        ``wm_iconbitmap``, поэтому используем ``iconphoto`` с PNG. Файл
+        ищем рядом с программой и во временной папке собранного exe
+        (``_resource_path``). Иконка — украшение; при её отсутствии просто
+        ничего не делаем, запуск от этого не зависит.
+        """
+        path = _resource_path(os.path.join("assets", "swept-logo.png"))
+        if not path:
+            return
+        try:
+            self.iconphoto(True, tk.PhotoImage(file=path))
+        except Exception:
+            pass
+
     # ============================================================== ШАПКА
     def _build_header(self):
-        header = ctk.CTkFrame(self, fg_color=COLOR_CARD, corner_radius=12)
-        header.pack(fill="x", padx=14, pady=(14, 8))
+        header = ctk.CTkFrame(self, fg_color=COLOR_CARD, corner_radius=14, height=58)
+        header.pack(fill="x", padx=14, pady=(12, 8))
+        header.pack_propagate(False)
 
         left = ctk.CTkFrame(header, fg_color="transparent")
-        left.pack(side="left", padx=16, pady=12)
+        left.pack(side="left", padx=(16, 0), pady=11)
 
-        ctk.CTkLabel(left, text=i18n.t("app.brand"),
-                     font=ctk.CTkFont(size=22, weight="bold"),
-                     text_color=COLOR_TEXT).pack(anchor="w")
-        ctk.CTkLabel(left, text=i18n.t("app.subtitle"),
-                     font=ctk.CTkFont(size=12),
-                     text_color=COLOR_MUTED).pack(anchor="w", pady=(2, 0))
+        mark = tk.Canvas(left, width=26, height=26, bg=COLOR_CARD, highlightthickness=0)
+        mark.pack(side="left", padx=(0, 10))
+        # Знак бренда: «S» мятного цвета в фиолетовом орбитальном кольце —
+        # ровно то, что на иконке программы.
+        mark.create_oval(1, 1, 25, 25, outline=COLOR_VIOLET, width=2)
+        mark.create_text(13, 13, text="S", fill=COLOR_MINT,
+                         font=("Segoe UI", 15, "bold"))
 
-        self.admin_label = ctk.CTkLabel(header, text="", font=ctk.CTkFont(size=12, weight="bold"))
-        self.admin_label.pack(side="right", padx=16)
+        ctk.CTkLabel(left, text=i18n.t("app.name"),
+                     font=ctk.CTkFont(size=15, weight="bold"),
+                     text_color=COLOR_TEXT).pack(side="left")
+
+        ctk.CTkLabel(left, text=i18n.t("app.version"),
+                     font=ctk.CTkFont(size=10, weight="bold"),
+                     text_color=COLOR_MINT, fg_color=COLOR_CARD_2,
+                     corner_radius=8, width=52, height=20).pack(side="left", padx=(10, 0))
+
+        self.admin_label = ctk.CTkLabel(header, text="",
+                                        font=ctk.CTkFont(size=10, weight="bold"),
+                                        fg_color=COLOR_CARD_2, corner_radius=8,
+                                        width=86, height=22)
+        self.admin_label.pack(side="right", padx=(0, 14))
         self._refresh_admin_label()
 
         # Выпадающий список языка интерфейса (Русский / English).
         # Названия пишутся эндонимами, поэтому список не «перескакивает»
         # при смене языка; выбранное значение сразу уходит в реестр.
         self._lang_label = ctk.CTkLabel(header, text=i18n.t("lang.label"),
-                                        font=ctk.CTkFont(size=12),
+                                        font=ctk.CTkFont(size=11),
                                         text_color=COLOR_MUTED)
         self._lang_switch = ctk.CTkComboBox(
             header,
             values=i18n.language_values(),
             command=self._on_language_change,
-            height=28, width=150, font=ctk.CTkFont(size=12),
+            height=28, width=140, font=ctk.CTkFont(size=11),
             dropdown_font=ctk.CTkFont(size=12),
             state="readonly",
-            fg_color=COLOR_CARD_2, border_color=COLOR_ACCENT,
-            button_color=COLOR_ACCENT, button_hover_color=COLOR_ACCENT_HOVER,
+            fg_color=COLOR_CARD_2, border_color=COLOR_LINE,
+            button_color=COLOR_CARD_2, button_hover_color=COLOR_ACCENT,
             dropdown_fg_color=COLOR_CARD_2, dropdown_hover_color=COLOR_ACCENT,
             dropdown_text_color=COLOR_TEXT, text_color=COLOR_TEXT)
         # Порядок упаковки: сначала список (он у самого края), затем подпись слева.
-        self._lang_switch.pack(side="right", padx=(0, 10))
+        self._lang_switch.pack(side="right", padx=(0, 8))
         self._lang_label.pack(side="right", padx=(0, 6))
         self._sync_lang_switch()
 
@@ -378,9 +499,11 @@ class CleanerApp(ctk.CTk):
         if self._admin_ok is None:
             self.admin_label.configure(text="")
         elif self._admin_ok:
-            self.admin_label.configure(text=i18n.t("admin.yes"), text_color=COLOR_GREEN)
+            self.admin_label.configure(text=i18n.t("admin.chip_yes"),
+                                       text_color=COLOR_GREEN)
         else:
-            self.admin_label.configure(text=i18n.t("admin.no"), text_color=COLOR_RED)
+            self.admin_label.configure(text=i18n.t("admin.chip_no"),
+                                       text_color=COLOR_RED)
 
     def _apply_language(self, code: str):
         """
@@ -402,28 +525,29 @@ class CleanerApp(ctk.CTk):
             "opt_vars": {key: var.get() for key, var in self.opt_vars.items()},
             "scan_only": self.scan_only_var.get(),
             "tab_index": self._tab_index,
+            "module_open": self._current_module is not None,
             "results": list(self.installer_results),
             "selected_row": self.selected_row,
             "total_freed": self.total_freed,
             "total_text": self._total_text,
-            "winget": self.winget_available,
+            "installer": self.installer_available,
             "query": "",
             "pkg_text": "",
-            "log": "",
+            "log": self._log_text(),
         }
         try:
             state["query"] = self.search_entry.get()
             state["pkg_text"] = self.pkg_entry.get()
         except Exception:
             pass
-        try:
-            state["log"] = self.log_box.get("1.0", "end-1c")
-        except Exception:
-            pass
         return state
 
     def _rebuild_ui(self, state: dict):
         """Удаляет все виджеты и строит интерфейс заново на новом языке."""
+        # Какие панели пользователь уже открывал — их и восстановим, чтобы
+        # после смены языка не пришлось открывать модуль заново.
+        built_before = [k for k in range(len(self._module_frames))
+                        if self._module_built(k)]
         for child in self.winfo_children():
             child.destroy()
 
@@ -440,17 +564,38 @@ class CleanerApp(ctk.CTk):
         self.opt_tip = None
         self.opt_rows = {}
         self._opt_live_visible = False
-        # Виджеты блока WinSxS пересоздаются вместе с вкладкой «Очистка».
+        # Виджеты блока WinSxS пересоздаются вместе с модулем WinSxS.
         self.winsxs_state = None
         self.winsxs_detail = None
         self.winsxs_check_btn = None
         self.winsxs_clean_btn = None
         self.winsxs_progress = None
+        self._rail = {}
+        self.feed_labels = []
+        self._feed_scheduled = False
+        self._core_scheduled = False
+        # Панель журнала пересоздаётся вместе с модулем; накопленные строки
+        # остаются в _log_backlog и вставятся при её сборке.
+        self.log_box = None
+        # Список крупнейших категорий пересоздаётся вместе с модулем очистки.
+        self.top_box = None
+        self.top_rows = []
+        self.top_empty = None
 
         self.title(i18n.t("app.title"))
-        self._build_header()
-        self._build_tabs()
-        self._build_footer()
+        self._build_shell()
+
+        # Панели строятся лениво, поэтому перед восстановлением состояния
+        # собираем те модули, чьи виджеты сейчас понадобятся: уже открывавшиеся
+        # и те, чьё состояние нужно вернуть (список, выбор, галочки).
+        for index in built_before:
+            self._ensure_module(index)
+        if state["vars"] or state["total_text"]:
+            self._ensure_module(0)
+        if state["query"] or state["pkg_text"] or state["results"]:
+            self._ensure_module(1)
+        if state["opt_vars"]:
+            self._ensure_module(2)
 
         # Восстанавливаем состояние.
         for key, value in state["vars"].items():
@@ -462,17 +607,12 @@ class CleanerApp(ctk.CTk):
         self.scan_only_var.set(state["scan_only"])
         self.total_freed = state["total_freed"]
         self._total_text = state["total_text"]
-        if self._total_text:
-            self.total_label.configure(text=self._total_text)
+        self._apply_total_text()
 
+        # Журнал переносим в накопитель: он вставится при первом открытии
+        # панели (или сразу, если панель уже построена ниже).
         if state["log"]:
-            try:
-                self.log_box.configure(state="normal")
-                self.log_box.insert("1.0", state["log"])
-                self.log_box.see("end")
-                self.log_box.configure(state="disabled")
-            except Exception:
-                pass
+            self._log_backlog = state["log"].splitlines()
 
         if state["query"]:
             self.search_entry.insert(0, state["query"])
@@ -484,59 +624,527 @@ class CleanerApp(ctk.CTk):
             self.pkg_entry.delete(0, "end")
             self.pkg_entry.insert(0, state["pkg_text"])
 
-        # Возвращаемся на ту же вкладку.
+        # Возвращаемся к тому же модулю (или остаёмся на орбите).
         try:
-            names = list(self._tab_names)
-            index = state["tab_index"] if state["tab_index"] < len(names) else 0
-            self.tabs.set(names[index])
+            index = int(state.get("tab_index") or 0)
+            if not (0 <= index < len(self._module_frames)):
+                index = 0
             self._tab_index = index
+            if state.get("module_open"):
+                self._select_module(index)
+            else:
+                self._show_orbit()
         except Exception:
             pass
 
         self._apply_installer_buttons(self.running)
         self._set_running(self.running)
 
-    # ================================================================ ВКЛАДКИ
-    def _build_tabs(self):
-        """Создаёт Notebook с четырьмя вкладками."""
-        self.tabs = ctk.CTkTabview(self, fg_color=COLOR_CARD, corner_radius=12,
-                                   segmented_button_selected_color=COLOR_ACCENT,
-                                   segmented_button_selected_hover_color=COLOR_ACCENT_HOVER,
-                                   command=self._on_tab_change)
-        self.tabs.pack(fill="both", expand=True, padx=14, pady=8)
+    # ============================================================== ОБОЛОЧКА
+    def _build_shell(self):
+        """Каркас Orbit: шапка, два рельса с орбитой между ними, нижняя лента."""
+        self._build_header()
+        self._build_body()
+        self._build_ribbon()
+        self._show_orbit()
+        self.bind("<Escape>", lambda _e: self._show_orbit())
+        self._refresh_telemetry()
+        self._render_top_categories()
 
-        self.tab_clean = self.tabs.add(i18n.t("tab.clean"))
-        self.tab_install = self.tabs.add(i18n.t("tab.install"))
-        self.tab_opt = self.tabs.add(i18n.t("tab.optimize"))
-        self.tab_log = self.tabs.add(i18n.t("tab.log"))
-        self.tab_schedule = self.tabs.add(i18n.t("tab.schedule"))
+    def _build_body(self):
+        body = ctk.CTkFrame(self, fg_color="transparent")
+        body.pack(fill="both", expand=True, padx=14)
+        body.grid_columnconfigure(0, weight=0, minsize=RAIL_LEFT)
+        body.grid_columnconfigure(1, weight=1)
+        body.grid_columnconfigure(2, weight=0, minsize=RAIL_RIGHT)
+        body.grid_rowconfigure(0, weight=1)
+        self._build_left_rail(body)
+        self._build_stage(body)
+        self._build_right_rail(body)
 
-        # Имена вкладок нужны для восстановления активной вкладки
-        # после смены языка (имена меняются вместе с языком).
-        self._tab_names = [i18n.t("tab.clean"), i18n.t("tab.install"),
-                           i18n.t("tab.optimize"), i18n.t("tab.log"),
-                           i18n.t("tab.schedule")]
+    # ------------------------------------------------------------ левый рельс
+    def _build_left_rail(self, parent):
+        rail = ctk.CTkFrame(parent, fg_color=COLOR_CARD, corner_radius=14,
+                            width=RAIL_LEFT)
+        rail.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+        rail.grid_propagate(False)
 
-        self._build_clean_tab(self.tab_clean)
-        self._build_install_tab(self.tab_install)
-        self._build_optimize_tab(self.tab_opt)
-        self._build_log_tab(self.tab_log)
-        self._build_schedule_tab(self.tab_schedule)
+        ctk.CTkLabel(rail, text=i18n.t("rail.system").upper(),
+                     font=ctk.CTkFont(size=10, weight="bold"),
+                     text_color=COLOR_MUTED).pack(anchor="w", padx=16, pady=(14, 12))
 
-    def _on_tab_change(self):
-        """Запоминает активную вкладку (нужно при смене языка)."""
+        self._rail["disk"] = self._rail_stat(rail, i18n.t("rail.disk"))
+        self._rail["temp"] = self._rail_stat(rail, i18n.t("rail.temp"))
+        self._rail["bin"] = self._rail_stat(rail, i18n.t("rail.bin"))
+
+        ctk.CTkFrame(rail, fg_color=COLOR_LINE, height=1).pack(
+            fill="x", padx=16, pady=(6, 10))
+
+        self._rail["categories"] = self._rail_micro(rail, i18n.t("rail.categories"), "0")
+        self._rail["files"] = self._rail_micro(rail, i18n.t("rail.files"), "0")
+        self._rail["restore"] = self._rail_micro(rail, i18n.t("rail.restore"), "—")
+
+        bottom = ctk.CTkFrame(rail, fg_color="transparent")
+        bottom.pack(side="bottom", fill="x", padx=16, pady=14)
+        ctk.CTkLabel(bottom, text=i18n.t("rail.total").upper(),
+                     font=ctk.CTkFont(size=10, weight="bold"),
+                     text_color=COLOR_MUTED).pack(anchor="w")
+        self._rail["total"] = ctk.CTkLabel(
+            bottom, text=core.format_bytes(0),
+            font=ctk.CTkFont(size=22, weight="bold"), text_color=COLOR_MINT)
+        self._rail["total"].pack(anchor="w", pady=(2, 0))
+
+    def _rail_stat(self, parent, title):
+        """Строка телеметрии: подпись, значение и тонкая полоса."""
+        box = ctk.CTkFrame(parent, fg_color="transparent")
+        box.pack(fill="x", padx=16, pady=(0, 12))
+        row = ctk.CTkFrame(box, fg_color="transparent")
+        row.pack(fill="x")
+        ctk.CTkLabel(row, text=title, font=ctk.CTkFont(size=11),
+                     text_color=COLOR_MUTED).pack(side="left")
+        value = ctk.CTkLabel(row, text="—", font=ctk.CTkFont(size=11, weight="bold"),
+                             text_color=COLOR_TEXT)
+        value.pack(side="right")
+        bar = ctk.CTkProgressBar(box, height=4, corner_radius=2,
+                                 fg_color=COLOR_CARD_2, progress_color=COLOR_MINT)
+        bar.set(0)
+        bar.pack(fill="x", pady=(6, 0))
+        return {"value": value, "bar": bar}
+
+    def _rail_micro(self, parent, title, value):
+        row = ctk.CTkFrame(parent, fg_color="transparent")
+        row.pack(fill="x", padx=16, pady=2)
+        ctk.CTkLabel(row, text=title, font=ctk.CTkFont(size=11),
+                     text_color=COLOR_MUTED).pack(side="left")
+        val = ctk.CTkLabel(row, text=value, font=ctk.CTkFont(size=11, weight="bold"),
+                           text_color=COLOR_TEXT)
+        val.pack(side="right")
+        return val
+
+    def _refresh_telemetry(self):
+        """Обновляет левый рельс по данным последнего сканирования."""
+        rail = getattr(self, "_rail", None)
+        if not rail:
+            return
         try:
-            name = self.tabs.get()
-            if name in self._tab_names:
-                self._tab_index = self._tab_names.index(name)
+            drive = os.environ.get("SystemDrive", "C:") + "\\"
+            usage = shutil.disk_usage(drive)
+            share = usage.used / usage.total if usage.total else 0.0
+            rail["disk"]["value"].configure(text="{}%".format(int(round(share * 100))))
+            rail["disk"]["bar"].set(share)
         except Exception:
             pass
+
+        temp_size = 0
+        for key in ("temp_user", "temp_system"):
+            temp_size += int((self.scan_results.get(key) or {}).get("total_size", 0))
+        bin_size = int((self.scan_results.get("recycle") or {}).get("total_size", 0))
+        files = sum(int((r or {}).get("total_count", 0))
+                    for r in self.scan_results.values())
+
+        for name, size in (("temp", temp_size), ("bin", bin_size)):
+            if size:
+                rail[name]["value"].configure(text=core.format_bytes(size))
+                rail[name]["bar"].set(min(1.0, size / float(1024 ** 3)))
+            else:
+                rail[name]["value"].configure(text=core.format_bytes(0))
+                rail[name]["bar"].set(0)
+
+        rail["categories"].configure(text=str(len(core.CATEGORIES)))
+        rail["files"].configure(text="{:,}".format(files).replace(",", " "))
+        rail["total"].configure(text=core.format_bytes(self.total_freed))
+
+    # ------------------------------------------------------------- правый рельс
+    def _build_right_rail(self, parent):
+        rail = ctk.CTkFrame(parent, fg_color=COLOR_CARD, corner_radius=14,
+                            width=RAIL_RIGHT)
+        rail.grid(row=0, column=2, sticky="nsew", padx=(10, 0))
+        rail.grid_propagate(False)
+
+        head = ctk.CTkFrame(rail, fg_color="transparent")
+        head.pack(fill="x", padx=16, pady=(14, 10))
+        ctk.CTkLabel(head, text=i18n.t("feed.title").upper(),
+                     font=ctk.CTkFont(size=10, weight="bold"),
+                     text_color=COLOR_MUTED).pack(side="left")
+        self.feed_count = ctk.CTkLabel(head, text="0",
+                                       font=ctk.CTkFont(size=10, weight="bold"),
+                                       text_color=COLOR_MINT)
+        self.feed_count.pack(side="right")
+
+        self.feed_box = ctk.CTkFrame(rail, fg_color="transparent")
+        self.feed_box.pack(fill="both", expand=True, padx=16, pady=(0, 12))
+        self.feed_labels = []
+        for _ in range(7):
+            lbl = ctk.CTkLabel(self.feed_box, text="", anchor="w", justify="left",
+                               font=ctk.CTkFont(size=10), text_color=COLOR_MUTED,
+                               wraplength=RAIL_RIGHT - 44)
+            lbl.pack(fill="x", pady=2)
+            self.feed_labels.append(lbl)
+        self._render_feed()
+
+    def _push_feed(self, line: str):
+        """Кладёт строку в короткую ленту правого рельса (с ограничением частоты)."""
+        if not line:
+            return
+        self._feed_lines.appendleft(line)
+        if self._feed_scheduled:
+            return
+        self._feed_scheduled = True
+        # Пакет строк приходит тысячами — перерисовываем ленту не чаще 8 раз/с.
+        self.after(120, self._flush_feed)
+
+    def _flush_feed(self):
+        self._feed_scheduled = False
+        self._render_feed()
+
+    def _render_feed(self):
+        labels = getattr(self, "feed_labels", None)
+        if not labels:
+            return
+        lines = list(self._feed_lines)
+        for i, lbl in enumerate(labels):
+            text = lines[i] if i < len(lines) else ""
+            lbl.configure(text=text, text_color=COLOR_TEXT if i == 0 else COLOR_MUTED)
+        try:
+            self.feed_count.configure(text=str(len(lines)))
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------ сцена
+    def _build_stage(self, parent):
+        self.stage = ctk.CTkFrame(parent, fg_color=COLOR_CARD, corner_radius=14)
+        self.stage.grid(row=0, column=1, sticky="nsew")
+        self.stage.grid_rowconfigure(0, weight=1)
+        self.stage.grid_columnconfigure(0, weight=1)
+
+        self.orbit_view = ctk.CTkFrame(self.stage, fg_color="transparent")
+        self.orbit_view.grid(row=0, column=0, sticky="nsew")
+        self.orbit_canvas = tk.Canvas(self.orbit_view, bg=COLOR_CARD,
+                                      highlightthickness=0, bd=0)
+        self.orbit_canvas.pack(fill="both", expand=True)
+        # Перерисовку при изменении размера пропускаем через тот же
+        # планировщик: при перетаскивании края окна события идут потоком,
+        # и рисовать на каждое — лишняя работа.
+        self.orbit_canvas.bind("<Configure>", lambda _e: self._schedule_core_redraw())
+        self.orbit_canvas.bind("<Button-1>", self._on_orbit_click)
+
+        self.module_host = ctk.CTkFrame(self.stage, fg_color="transparent")
+        self.module_host.grid(row=0, column=0, sticky="nsew")
+        self.module_host.grid_rowconfigure(0, weight=1)
+        self.module_host.grid_columnconfigure(0, weight=1)
+
+        # Панели модулей строятся лениво: при старте создаётся только журнал
+        # (в него пишется первая же строка про права). Остальные пять панелей
+        # собираются при первом открытии — это ~1 секунда экономии на запуске.
+        self._module_builders = [self._build_clean_tab, self._build_install_tab,
+                                 self._build_optimize_tab, self._build_schedule_tab,
+                                 self._build_log_tab, self._build_winsxs_tab]
+        self._module_frames = [None] * len(self._module_builders)
+        self.module_host.grid_remove()
+
+    def _ensure_module(self, index: int):
+        """Строит панель модуля при первом обращении и возвращает её."""
+        if not (0 <= index < len(self._module_builders)):
+            return None
+        frame = self._module_frames[index]
+        if frame is not None:
+            return frame
+        frame = ctk.CTkFrame(self.module_host, fg_color="transparent")
+        frame.grid(row=0, column=0, sticky="nsew")
+        # Ссылку сохраняем до вызова строителя: он может обратиться к модулю
+        # повторно (например, _build_winsxs_block перерисовывает отчёт).
+        self._module_frames[index] = frame
+        self._module_builders[index](frame)
+        frame.grid_remove()
+        return frame
+
+    def _module_built(self, index: int) -> bool:
+        """True, если панель модуля уже построена (панели создаются лениво)."""
+        return (0 <= index < len(self._module_frames)
+                and self._module_frames[index] is not None)
+
+    # ------------------------------------------------------------- навигация
+    def _select_module(self, index: int):
+        """Открывает панель модуля вместо орбиты."""
+        if not (0 <= index < len(self._module_frames)):
+            return
+        self._current_module = index
+        self._tab_index = index
+        # Панель собирается здесь же, при первом открытии.
+        self._ensure_module(index)
+        self.orbit_view.grid_remove()
+        self.module_host.grid()
+        for k, frame in enumerate(self._module_frames):
+            if frame is None:
+                continue
+            if k == index:
+                frame.grid()
+                frame.tkraise()
+            else:
+                frame.grid_remove()
+        try:
+            self.ribbon_back.configure(state="normal")
+        except Exception:
+            pass
+        self._update_ribbon()
+        if index == 0:
+            self.ribbon_actions.pack(side="right", padx=(0, 8), pady=10)
+        else:
+            self.ribbon_actions.pack_forget()
+
+    def _show_orbit(self):
+        """Возвращает сцену к орбите."""
+        self._current_module = None
+        try:
+            self.module_host.grid_remove()
+            self.orbit_view.grid()
+            self.ribbon_back.configure(state="disabled")
+            self.ribbon_actions.pack_forget()
+        except Exception:
+            pass
+        self._update_ribbon()
+        self._draw_orbit()
+
+    def _update_ribbon(self):
+        if self._current_module is None:
+            self.ribbon_title.configure(text=i18n.t("app.name"))
+            self.ribbon_sub.configure(text=i18n.t("orbit.pick"))
+            return
+        key = MODULE_KEYS[self._current_module]
+        self.ribbon_title.configure(text=i18n.t("mod." + key))
+        self.ribbon_sub.configure(text=i18n.t("mod." + key + ".sub"))
+
+    # ---------------------------------------------------------------- орбита
+    def _core_state(self):
+        """Что показать в центре: подпись, значение, пояснение, подсказка."""
+        files = sum(int((r or {}).get("total_count", 0))
+                    for r in self.scan_results.values())
+        size = sum(int((r or {}).get("total_size", 0))
+                   for r in self.scan_results.values())
+        if getattr(self, "running", False):
+            return (i18n.t("orbit.busy"), "…", i18n.t("orbit.busy_sub"), "")
+        if size > 0:
+            return (i18n.t("orbit.reclaim"), core.format_bytes(size),
+                    i18n.t("orbit.found").format(len(self.scan_results), files),
+                    i18n.t("orbit.ready"))
+        if self.scan_results:
+            return (i18n.t("orbit.freed"), core.format_bytes(0),
+                    i18n.t("orbit.done"), "")
+        return (i18n.t("orbit.reclaim"), core.format_bytes(0),
+                "", i18n.t("orbit.idle"))
+
+    def _draw_orbit(self):
+        canvas = getattr(self, "orbit_canvas", None)
+        if canvas is None:
+            return
+        try:
+            canvas.delete("all")
+        except Exception:
+            return
+        self._node_hits = []
+        width = canvas.winfo_width()
+        height = canvas.winfo_height()
+        if width < 120 or height < 120:
+            return
+
+        cx, cy = width / 2.0, height / 2.0
+        radius = min(width, height) * 0.315
+        node_r = max(24.0, min(34.0, radius * 0.30))
+
+        canvas.create_oval(cx - radius, cy - radius, cx + radius, cy + radius,
+                           outline=COLOR_LINE, width=1)
+        canvas.create_oval(cx - radius + 18, cy - radius + 18,
+                           cx + radius - 18, cy + radius - 18,
+                           outline=COLOR_CARD_2, width=1, dash=(3, 7))
+
+        core_r = radius * 0.56
+        canvas.create_oval(cx - core_r, cy - core_r, cx + core_r, cy + core_r,
+                           fill=COLOR_CARD_2, outline=COLOR_LINE)
+
+        if self._orbit_progress > 0.002:
+            canvas.create_arc(cx - core_r - 6, cy - core_r - 6,
+                              cx + core_r + 6, cy + core_r + 6,
+                              start=90, extent=-359.9 * self._orbit_progress,
+                              style="arc", outline=COLOR_MINT, width=3)
+
+        label, value, sub, hint = self._core_state()
+        canvas.create_text(cx, cy - core_r * 0.48, text=label.upper(),
+                           fill=COLOR_MUTED, font=("Segoe UI", 8))
+        canvas.create_text(cx, cy + 1, text=value, fill=COLOR_TEXT,
+                           font=("Segoe UI", max(15, int(core_r * 0.36)), "bold"))
+        canvas.create_text(cx, cy + core_r * 0.45, text=sub, fill=COLOR_MUTED,
+                           font=("Segoe UI", 9), width=core_r * 1.7,
+                           justify="center")
+        if hint:
+            canvas.create_text(cx, cy + core_r * 0.78, text=hint.upper(),
+                               fill=COLOR_MINT, font=("Segoe UI", 7))
+
+        for i, key in enumerate(MODULE_KEYS):
+            angle = math.radians(-90 + i * 60)
+            x = cx + radius * math.cos(angle)
+            y = cy + radius * math.sin(angle)
+            selected = (i == self._current_module)
+            canvas.create_oval(x - node_r, y - node_r, x + node_r, y + node_r,
+                               fill=COLOR_ACCENT if selected else COLOR_CARD,
+                               outline=COLOR_ACCENT if selected else COLOR_LINE,
+                               width=2 if selected else 1)
+            self._draw_node_icon(canvas, key, x, y,
+                                 COLOR_BG if selected else COLOR_MUTED)
+            canvas.create_text(x, y + node_r + 12, text=i18n.t("mod." + key),
+                               fill=COLOR_MINT if selected else COLOR_MUTED,
+                               font=("Segoe UI", 9))
+            self._node_hits.append((x, y, node_r, i))
+
+    def _draw_node_icon(self, canvas, key: str, x: float, y: float, color: str):
+        """Простые векторные иконки узлов — без шрифтовых символов."""
+        if key == "clean":
+            canvas.create_line(x - 7, y - 5, x + 7, y - 5, fill=color, width=2)
+            canvas.create_line(x - 3, y - 8, x + 3, y - 8, fill=color, width=2)
+            canvas.create_line(x - 5, y - 4, x - 4, y + 8, fill=color, width=2)
+            canvas.create_line(x + 5, y - 4, x + 4, y + 8, fill=color, width=2)
+            canvas.create_line(x - 4, y + 8, x + 4, y + 8, fill=color, width=2)
+        elif key == "install":
+            canvas.create_line(x, y - 9, x, y + 5, fill=color, width=2)
+            canvas.create_line(x - 4, y + 1, x, y + 6, fill=color, width=2)
+            canvas.create_line(x + 4, y + 1, x, y + 6, fill=color, width=2)
+            canvas.create_line(x - 7, y + 9, x + 7, y + 9, fill=color, width=2)
+        elif key == "optimize":
+            canvas.create_polygon(x + 2, y - 10, x - 6, y + 1, x - 1, y + 1,
+                                  x - 2, y + 10, x + 6, y - 2, x + 1, y - 2,
+                                  fill=color, outline="")
+        elif key == "schedule":
+            canvas.create_oval(x - 8, y - 8, x + 8, y + 8, outline=color, width=2)
+            canvas.create_line(x, y - 4, x, y, x + 4, y + 2, fill=color, width=2)
+        elif key == "log":
+            canvas.create_rectangle(x - 6, y - 9, x + 6, y + 9,
+                                    outline=color, width=2)
+            canvas.create_line(x - 3, y - 4, x + 3, y - 4, fill=color, width=1)
+            canvas.create_line(x - 3, y, x + 3, y, fill=color, width=1)
+            canvas.create_line(x - 3, y + 4, x + 1, y + 4, fill=color, width=1)
+        elif key == "winsxs":
+            canvas.create_polygon(x, y - 9, x + 8, y - 4, x, y + 1, x - 8, y - 4,
+                                  outline=color, fill="", width=2)
+            canvas.create_line(x - 8, y + 1, x, y + 6, x + 8, y + 1,
+                               fill=color, width=2)
+            canvas.create_line(x - 8, y + 6, x, y + 11, x + 8, y + 6,
+                               fill=color, width=2)
+
+    def _on_orbit_click(self, event):
+        for x, y, radius, index in self._node_hits:
+            if (event.x - x) ** 2 + (event.y - y) ** 2 <= (radius + 6) ** 2:
+                self._select_module(index)
+                return
+
+    def _refresh_core(self):
+        """Перерисовывает центр сцены по текущему прогрессу."""
+        bar = getattr(self, "progress", None)
+        if bar is not None:
+            try:
+                self._orbit_progress = float(bar.get())
+            except Exception:
+                pass
+        self._draw_orbit()
+
+    def _set_progress(self, value: float):
+        """Ставит прогресс и обновляет дугу. Полосы может ещё не быть —
+        модуль очистки строится лениво, а плановая очистка идёт и без него."""
+        try:
+            self._orbit_progress = max(0.0, min(1.0, float(value)))
+        except (TypeError, ValueError):
+            self._orbit_progress = 0.0
+        bar = getattr(self, "progress", None)
+        if bar is not None:
+            try:
+                bar.set(self._orbit_progress)
+            except Exception:
+                pass
+        self._schedule_core_redraw()
+
+    def _schedule_core_redraw(self):
+        """Перерисовывает центр не чаще ~16 раз в секунду.
+
+        Один кадр орбиты стоит около миллисекунды; при потоке сообщений
+        о прогрессе перерисовка на каждое съедала бы больше времени, чем
+        само удаление файлов.
+        """
+        if self._core_scheduled:
+            return
+        self._core_scheduled = True
+        self.after(60, self._flush_core_redraw)
+
+    def _flush_core_redraw(self):
+        self._core_scheduled = False
+        if self._closing:
+            return
+        self._draw_orbit()
+
+    def _apply_total_text(self):
+        """Показывает накопленный итог в модуле очистки (если он уже построен)."""
+        label = getattr(self, "total_label", None)
+        if label is None or not self._total_text:
+            return
+        try:
+            label.configure(text=self._total_text)
+        except Exception:
+            pass
+
+    # ---------------------------------------------------------------- лента
+    def _build_ribbon(self):
+        ribbon = ctk.CTkFrame(self, fg_color=COLOR_CARD, corner_radius=14)
+        ribbon.pack(fill="x", padx=14, pady=(8, 12))
+
+        self.ribbon_back = ctk.CTkButton(
+            ribbon, text="← " + i18n.t("ribbon.back"), width=104, height=32,
+            font=ctk.CTkFont(size=11), fg_color="transparent",
+            hover_color=COLOR_CARD_2, border_width=1, border_color=COLOR_LINE,
+            text_color=COLOR_MUTED, state="disabled", command=self._show_orbit)
+        self.ribbon_back.pack(side="left", padx=(14, 0), pady=10)
+
+        left = ctk.CTkFrame(ribbon, fg_color="transparent")
+        left.pack(side="left", padx=(14, 0), pady=10)
+        self.ribbon_title = ctk.CTkLabel(left, text="",
+                                         font=ctk.CTkFont(size=15, weight="bold"),
+                                         text_color=COLOR_TEXT)
+        self.ribbon_title.pack(anchor="w")
+        self.ribbon_sub = ctk.CTkLabel(left, text="", font=ctk.CTkFont(size=11),
+                                       text_color=COLOR_MUTED)
+        self.ribbon_sub.pack(anchor="w")
+
+        # Действия модуля «Очистка» живут в ленте (как в концепте Orbit)
+        # и показываются только когда этот модуль открыт.
+        self.ribbon_actions = ctk.CTkFrame(ribbon, fg_color="transparent")
+        self.analyze_btn = ctk.CTkButton(
+            self.ribbon_actions, text=i18n.t("btn.analyze"), width=128, height=34,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=COLOR_ACCENT, hover_color=COLOR_ACCENT_HOVER,
+            command=self.on_analyze)
+        self.analyze_btn.pack(side="left", padx=(0, 8))
+        self.clean_btn = ctk.CTkButton(
+            self.ribbon_actions, text=i18n.t("btn.clean"), width=128, height=34,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=COLOR_GREEN, hover_color=COLOR_GREEN_HOVER,
+            command=self.on_clean)
+        self.clean_btn.pack(side="left")
+        self.stop_btn = ctk.CTkButton(
+            self.ribbon_actions, text=i18n.t("btn.stop"), width=86, height=34,
+            font=ctk.CTkFont(size=12), fg_color=COLOR_CARD_2,
+            hover_color=COLOR_RED, state="disabled", command=self.on_stop)
+        self.stop_btn.pack(side="left", padx=(8, 0))
+
+        self.status_label = ctk.CTkLabel(ribbon, text=i18n.t("status.ready"),
+                                         font=ctk.CTkFont(size=11),
+                                         text_color=COLOR_MUTED)
+        self.status_label.pack(side="right", padx=16)
+
+    def _on_tab_change(self):
+        """Совместимость: раньше запоминала активную вкладку."""
+        return
 
     # ================================================= ВКЛАДКА «ОЧИСТКА»
     def _build_clean_tab(self, parent):
         """Вкладка очистки: категории слева, управление справа."""
-        parent.grid_columnconfigure(0, weight=0, minsize=380)
-        parent.grid_columnconfigure(1, weight=1)
+        parent.grid_columnconfigure(0, weight=1, minsize=380)
+        parent.grid_columnconfigure(1, weight=0, minsize=330)
         parent.grid_rowconfigure(0, weight=1)
 
         # --- Левая панель: категории ---
@@ -594,38 +1202,20 @@ class CleanerApp(ctk.CTk):
                      font=ctk.CTkFont(size=15, weight="bold"),
                      text_color=COLOR_TEXT).pack(anchor="w", padx=14, pady=(12, 8))
 
-        # Переключатель «Только сканирование».
-        self.scan_only_var = tk.BooleanVar(value=False)
+        # Переключатель «Только сканирование». Переменная создаётся в __init__
+        # (модуль строится лениво, а состояние нужно уже при смене языка).
         ctk.CTkSwitch(right, text=i18n.t("clean.scan_only"),
                       variable=self.scan_only_var,
                       font=ctk.CTkFont(size=12),
                       text_color=COLOR_MUTED,
                       progress_color=COLOR_ACCENT).pack(anchor="w", padx=14, pady=4)
 
-        # Кнопки.
-        btn_frame = ctk.CTkFrame(right, fg_color="transparent")
-        btn_frame.pack(fill="x", padx=14, pady=(10, 6))
-
-        self.analyze_btn = ctk.CTkButton(
-            btn_frame, text=i18n.t("btn.analyze"), width=150, height=38,
-            font=ctk.CTkFont(size=13, weight="bold"),
-            fg_color=COLOR_ACCENT, hover_color=COLOR_ACCENT_HOVER,
-            command=self.on_analyze)
-        self.analyze_btn.pack(side="left", padx=(0, 8))
-
-        self.clean_btn = ctk.CTkButton(
-            btn_frame, text=i18n.t("btn.clean"), width=150, height=38,
-            font=ctk.CTkFont(size=13, weight="bold"),
-            fg_color=COLOR_GREEN, hover_color=COLOR_GREEN_HOVER,
-            command=self.on_clean)
-        self.clean_btn.pack(side="left")
-
-        self.stop_btn = ctk.CTkButton(
-            btn_frame, text=i18n.t("btn.stop"), width=100, height=38,
-            font=ctk.CTkFont(size=13),
-            fg_color=COLOR_CARD, hover_color=COLOR_RED,
-            state="disabled", command=self.on_stop)
-        self.stop_btn.pack(side="left", padx=8)
+        # Кнопки «Анализ»/«Очистить»/«Стоп» переехали в нижнюю ленту
+        # (как в концепте Orbit) — здесь только подсказка об этом.
+        ctk.CTkLabel(right, text=i18n.t("clean.actions_hint"),
+                     font=ctk.CTkFont(size=11), text_color=COLOR_MUTED,
+                     wraplength=300, justify="left").pack(
+            anchor="w", padx=14, pady=(12, 8))
 
         # Итог.
         self.total_label = ctk.CTkLabel(
@@ -639,25 +1229,66 @@ class CleanerApp(ctk.CTk):
         self.progress.set(0)
         self.progress.pack(fill="x", padx=14, pady=(4, 12))
 
-        # Хранилище компонентов (WinSxS). Это не удаление файлов, а служебная
-        # команда DISM, поэтому у блока свои кнопки и своё состояние.
-        self._build_winsxs_block(right)
+        # Крупнейшие категории: заполняется после анализа, чтобы в панели
+        # управления не оставалось пустоты, а пользователь видел, что нашлось.
+        ctk.CTkLabel(right, text=i18n.t("clean.top").upper(),
+                     font=ctk.CTkFont(size=10, weight="bold"),
+                     text_color=COLOR_MUTED).pack(anchor="w", padx=14)
+        self.top_box = ctk.CTkFrame(right, fg_color="transparent")
+        self.top_box.pack(fill="x", padx=14, pady=(6, 12))
+        self.top_rows = []
+        self.top_empty = ctk.CTkLabel(self.top_box, text=i18n.t("clean.top_empty"),
+                                      font=ctk.CTkFont(size=11),
+                                      text_color=COLOR_MUTED)
+        self.top_empty.pack(anchor="w")
 
-    def _build_winsxs_block(self, parent):
-        """Блок «Хранилище компонентов (WinSxS)» на вкладке очистки."""
-        box = ctk.CTkFrame(parent, fg_color=COLOR_CARD, corner_radius=10)
-        box.pack(fill="x", padx=14, pady=(0, 12))
+        # Хранилище компонентов (WinSxS) — теперь отдельный модуль орбиты,
+        # поэтому здесь его блок не создаётся.
 
-        head = ctk.CTkFrame(box, fg_color="transparent")
-        head.pack(fill="x", padx=12, pady=(10, 0))
+    def _build_winsxs_tab(self, parent):
+        """Панель модуля WinSxS: заголовок с объяснением и сам блок DISM."""
+        parent.grid_columnconfigure(0, weight=1)
+        parent.grid_rowconfigure(1, weight=1)
 
+        head = ctk.CTkFrame(parent, fg_color=COLOR_CARD_2, corner_radius=10)
+        head.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 6))
         ctk.CTkLabel(head, text=i18n.t("winsxs.title"),
-                     font=ctk.CTkFont(size=13, weight="bold"),
-                     text_color=COLOR_TEXT).pack(side="left")
+                     font=ctk.CTkFont(size=15, weight="bold"),
+                     text_color=COLOR_TEXT).pack(anchor="w", padx=14, pady=(12, 2))
+        ctk.CTkLabel(head, text=i18n.t("winsxs.hint"),
+                     font=ctk.CTkFont(size=11), text_color=COLOR_MUTED,
+                     wraplength=640, justify="left").pack(
+            anchor="w", padx=14, pady=(0, 12))
 
-        ctk.CTkLabel(head, text=i18n.t("winsxs.sub"),
-                     font=ctk.CTkFont(size=10),
-                     text_color=COLOR_MUTED).pack(side="left", padx=(8, 0))
+        body = ctk.CTkFrame(parent, fg_color=COLOR_CARD_2, corner_radius=10)
+        body.grid(row=1, column=0, sticky="nsew", padx=10, pady=(0, 10))
+        self._build_winsxs_block(body, with_title=False)
+
+        # Что именно произойдёт — коротко, перед потенциально долгой операцией.
+        notes = ctk.CTkFrame(parent, fg_color="transparent")
+        notes.grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 10))
+        for text in ("winsxs.b1", "winsxs.b2", "winsxs.b3"):
+            ctk.CTkLabel(notes, text="· " + i18n.t(text),
+                         font=ctk.CTkFont(size=11), text_color=COLOR_MUTED,
+                         anchor="w", justify="left", wraplength=620).pack(
+                fill="x", padx=6, pady=1)
+
+    def _build_winsxs_block(self, parent, with_title: bool = True):
+        """Блок «Хранилище компонентов (WinSxS)»."""
+        box = ctk.CTkFrame(parent, fg_color=COLOR_CARD, corner_radius=10)
+        box.pack(fill="x", padx=14, pady=(12, 12))
+
+        if with_title:
+            head = ctk.CTkFrame(box, fg_color="transparent")
+            head.pack(fill="x", padx=12, pady=(10, 0))
+
+            ctk.CTkLabel(head, text=i18n.t("winsxs.title"),
+                         font=ctk.CTkFont(size=13, weight="bold"),
+                         text_color=COLOR_TEXT).pack(side="left")
+
+            ctk.CTkLabel(head, text=i18n.t("winsxs.sub"),
+                         font=ctk.CTkFont(size=10),
+                         text_color=COLOR_MUTED).pack(side="left", padx=(8, 0))
 
         # Главный ответ на вопрос «надо чистить или нет».
         self.winsxs_state = ctk.CTkLabel(
@@ -701,7 +1332,7 @@ class CleanerApp(ctk.CTk):
 
     # ============================================= ВКЛАДКА «УСТАНОВКА»
     def _build_install_tab(self, parent):
-        """Вкладка установки программ через winget.
+        """Вкладка установки программ (прямая установка, без winget).
 
         Слева — постоянная колонка наборов популярных программ, справа —
         поиск и найденные пакеты. Правая часть построена на grid с одной
@@ -804,8 +1435,10 @@ class CleanerApp(ctk.CTk):
                      font=ctk.CTkFont(size=15, weight="bold"),
                      text_color=COLOR_TEXT).grid(row=0, column=0, sticky="w")
 
-        self.winget_label = ctk.CTkLabel(head, text="", font=ctk.CTkFont(size=11))
-        self.winget_label.grid(row=0, column=1, sticky="e")
+        # Статус установщика — под заголовком: рядом с ним он не помещался
+        # в узкую колонку и заголовок обрезался.
+        self.installer_label = ctk.CTkLabel(head, text="", font=ctk.CTkFont(size=11))
+        self.installer_label.grid(row=1, column=0, sticky="w", pady=(2, 0))
 
         search_row = ctk.CTkFrame(top, fg_color="transparent")
         search_row.grid(row=1, column=0, sticky="ew", padx=14, pady=(0, 10))
@@ -831,14 +1464,14 @@ class CleanerApp(ctk.CTk):
             command=self.on_upgrade_all)
         self.upgrade_all_btn.grid(row=0, column=2)
 
-        # Проверка доступности winget выполняется в фоне один раз за сеанс:
+        # Проверка готовности установщика выполняется в фоне один раз за сеанс:
         # при смене языка интерфейс перерисовывается, а результат сохраняется.
-        if self.winget_available is None:
-            self.winget_label.configure(text=i18n.t("winget.checking"),
+        if self.installer_available is None:
+            self.installer_label.configure(text=i18n.t("installer.checking"),
                                         text_color=COLOR_MUTED)
-            threading.Thread(target=self._check_winget_worker, daemon=True).start()
+            threading.Thread(target=self._check_installer_worker, daemon=True).start()
         else:
-            self._refresh_winget_label()
+            self._refresh_installer_label()
 
         # --- Средняя панель: результаты поиска (кликабельный список) ---
         mid = ctk.CTkFrame(parent, fg_color=COLOR_CARD_2, corner_radius=10)
@@ -919,6 +1552,9 @@ class CleanerApp(ctk.CTk):
             bot, text=i18n.t("status.ready"), font=ctk.CTkFont(size=11),
             text_color=COLOR_MUTED, anchor="w")
         self.install_status.grid(row=2, column=0, sticky="ew", padx=16, pady=(0, 8))
+
+        # Панель могли открыть во время операции — сразу выставляем блокировку.
+        self._apply_installer_buttons(self.running)
 
     # =========================================== ВКЛАДКА «ОПТИМИЗАЦИЯ»
     def _build_optimize_tab(self, parent):
@@ -1007,20 +1643,21 @@ class CleanerApp(ctk.CTk):
         btn_frame = ctk.CTkFrame(right, fg_color="transparent")
         btn_frame.pack(fill="x", padx=14, pady=(4, 6))
         self.opt_apply_btn = ctk.CTkButton(
-            btn_frame, text=i18n.t("btn.apply"), width=210, height=38,
+            btn_frame, text=i18n.t("btn.apply"), height=38,
             font=ctk.CTkFont(size=13, weight="bold"),
             fg_color=COLOR_GREEN, hover_color=COLOR_GREEN_HOVER,
             command=self.on_optimize)
-        self.opt_apply_btn.pack(side="left")
+        self.opt_apply_btn.pack(fill="x")
 
         # Точка восстановления: создаётся через PowerShell Checkpoint-Computer.
-        # Безопасная операция — ставим рядом с «Применить» нейтральным цветом.
+        # Безопасная операция — ставим под «Применить» нейтральным цветом:
+        # в одну строку две кнопки не помещались и вторая обрезалась.
         self.opt_restore_btn = ctk.CTkButton(
-            btn_frame, text=i18n.t("btn.restore_point"), width=200, height=38,
-            font=ctk.CTkFont(size=13, weight="bold"),
+            btn_frame, text=i18n.t("btn.restore_point"), height=34,
+            font=ctk.CTkFont(size=12, weight="bold"),
             fg_color=COLOR_CARD, hover_color=COLOR_ACCENT,
             command=self.on_create_restore_point)
-        self.opt_restore_btn.pack(side="left", padx=(8, 0))
+        self.opt_restore_btn.pack(fill="x", pady=(8, 0))
 
         self.opt_status = ctk.CTkLabel(right, text=i18n.t("status.ready"),
                                        font=ctk.CTkFont(size=12),
@@ -1146,14 +1783,10 @@ class CleanerApp(ctk.CTk):
         self.log_box.pack(fill="both", expand=True, padx=14, pady=(6, 14))
         self.log_box.configure(state="disabled")
 
-    # ============================================================== ПОДВАЛ
-    def _build_footer(self):
-        footer = ctk.CTkFrame(self, fg_color=COLOR_CARD, corner_radius=12)
-        footer.pack(fill="x", padx=14, pady=(8, 14))
-
-        self.status_label = ctk.CTkLabel(footer, text=i18n.t("status.ready"),
-                                         font=ctk.CTkFont(size=12), text_color=COLOR_MUTED)
-        self.status_label.pack(anchor="w", padx=16, pady=12)
+        # Всё, что успело накопиться до первого открытия журнала.
+        if self._log_backlog:
+            self._insert_log_text(self._log_backlog)
+            self._log_backlog = []
 
     # ======================================================= ВСПОМОГАТЕЛЬНОЕ
     def _check_admin_warning(self):
@@ -1173,27 +1806,58 @@ class CleanerApp(ctk.CTk):
     def _log(self, text: str):
         self.msg_queue.put(("log", text))
 
+    def _insert_log_text(self, lines: list):
+        """Вставляет строки в текстовое поле журнала (если оно уже создано)."""
+        box = getattr(self, "log_box", None)
+        if box is None:
+            return
+        text = "\n".join(lines) + "\n"
+        try:
+            box.configure(state="normal")
+            box.insert("end", text)
+            line_count = int(box.index("end-1c").split(".")[0])
+            if line_count > MAX_LOG_LINES:
+                box.delete("1.0", "{}.0".format(line_count - MAX_LOG_LINES))
+            box.see("end")
+            box.configure(state="disabled")
+        except Exception:
+            # Окно уже закрыто/уничтожено — молча пропускаем.
+            pass
+
     def _append_log_lines(self, lines: list):
         """Вставляет пачку строк журнала одной операцией.
 
         Раньше каждая строка вставлялась отдельно, с прокруткой и проверкой
         длины: около 1 мс на строку, то есть 7 секунд на 6000 файлов. Одна
         вставка той же пачки занимает сотые доли секунды.
+
+        Панель журнала строится лениво, поэтому до её первого открытия
+        строки копятся в списке и вставляются разом при сборке.
         """
         if not lines:
             return
-        text = "\n".join(lines) + "\n"
+        if getattr(self, "log_box", None) is None:
+            self._log_backlog.extend(lines)
+            if len(self._log_backlog) > MAX_LOG_LINES:
+                del self._log_backlog[:len(self._log_backlog) - MAX_LOG_LINES]
+        else:
+            self._insert_log_text(lines)
+        # Короткая лента в правом рельсе: последние строки, без путей-простыней.
+        for line in lines[-7:]:
+            short = line.strip()
+            if len(short) > 74:
+                short = short[:71] + "…"
+            self._push_feed(short)
+
+    def _log_text(self) -> str:
+        """Весь журнал строкой: из поля, а если оно ещё не создано — из накопителя."""
+        box = getattr(self, "log_box", None)
+        if box is None:
+            return "\n".join(self._log_backlog)
         try:
-            self.log_box.configure(state="normal")
-            self.log_box.insert("end", text)
-            line_count = int(self.log_box.index("end-1c").split(".")[0])
-            if line_count > MAX_LOG_LINES:
-                self.log_box.delete("1.0", "{}.0".format(line_count - MAX_LOG_LINES))
-            self.log_box.see("end")
-            self.log_box.configure(state="disabled")
+            return box.get("1.0", "end-1c")
         except Exception:
-            # Окно уже закрыто/уничтожено — молча пропускаем.
-            pass
+            return "\n".join(self._log_backlog)
 
     def _append_log(self, text: str):
         self._append_log_lines([text])
@@ -1216,6 +1880,11 @@ class CleanerApp(ctk.CTk):
         self._set_lang_switch_enabled(not state)
         # Блок WinSxS зависит и от общей занятости, и от своей собственной.
         self._render_winsxs_report()
+        # Список крупнейших категорий актуален и до, и после операции.
+        self._render_top_categories()
+        # Центр сцены и левый рельс показывают то же состояние.
+        self._refresh_core()
+        self._refresh_telemetry()
 
     def _set_lang_switch_enabled(self, enabled: bool):
         """Блокирует переключатель языка на время операций."""
@@ -1232,6 +1901,71 @@ class CleanerApp(ctk.CTk):
         widget = self._info_widgets.get(key)
         if widget is not None:
             widget.configure(text=text)
+
+    def _top_row(self):
+        """Создаёт одну строку списка и возвращает её части для переиспользования."""
+        row = ctk.CTkFrame(self.top_box, fg_color="transparent")
+        row.grid_columnconfigure(0, weight=1)
+        title = ctk.CTkLabel(row, text="", font=ctk.CTkFont(size=11),
+                             text_color=COLOR_TEXT, anchor="w")
+        title.grid(row=0, column=0, sticky="w")
+        value = ctk.CTkLabel(row, text="", font=ctk.CTkFont(size=11, weight="bold"),
+                             text_color=COLOR_MINT, anchor="e")
+        value.grid(row=0, column=1, sticky="e", padx=(8, 0))
+        bar = ctk.CTkProgressBar(row, height=4, corner_radius=2,
+                                 fg_color=COLOR_LINE, progress_color=COLOR_ACCENT)
+        bar.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(3, 0))
+        return {"frame": row, "title": title, "value": value, "bar": bar}
+
+    def _render_top_categories(self):
+        """Пятёрка самых «тяжёлых» категорий — чтобы итог был наглядным.
+
+        Строки создаются один раз и дальше только обновляются: пересборка
+        пяти строк стоила ~30 мс, а вызывается этот метод на каждый старт
+        и финиш операции.
+        """
+        box = getattr(self, "top_box", None)
+        if box is None or getattr(self, "top_empty", None) is None:
+            return
+
+        items = [(key, int((res or {}).get("total_size") or 0))
+                 for key, res in self.scan_results.items()]
+        items = [item for item in items if item[1] > 0]
+        items.sort(key=lambda item: item[1], reverse=True)
+        items = items[:5]
+
+        if not items:
+            # Пусто — показываем спокойную подсказку вместо пустоты.
+            for row in self.top_rows:
+                row["frame"].pack_forget()
+            if not self.top_empty.winfo_manager():
+                self.top_empty.pack(anchor="w")
+            return
+
+        if self.top_empty.winfo_manager():
+            self.top_empty.pack_forget()
+
+        while len(self.top_rows) < len(items):
+            self.top_rows.append(self._top_row())
+
+        heaviest = items[0][1] or 1
+        for index, row in enumerate(self.top_rows):
+            if index >= len(items):
+                row["frame"].pack_forget()
+                continue
+            key, size = items[index]
+            title = core.category_title(key)
+            if len(title) > 34:
+                # Обрезаем по границе слова: «(%TEMP%)» в конце рвать некрасиво.
+                cut = title[:34]
+                space = cut.rfind(" ")
+                if space >= 18:
+                    cut = cut[:space]
+                title = cut.rstrip(" ,;·—(") + "…"
+            row["title"].configure(text=title)
+            row["value"].configure(text=core.format_bytes(size))
+            row["bar"].set(min(1.0, size / float(heaviest)))
+            row["frame"].pack(fill="x", pady=(0, 6))
 
     # ================================================== ОБРАБОТКА ОЧЕРЕДИ
     def _poll_queue(self):
@@ -1271,9 +2005,9 @@ class CleanerApp(ctk.CTk):
             self.status_label.configure(text=msg[1])
         elif kind == "progress":
             done, total = msg[1], msg[2]
-            self.progress.set(0 if not total else done / total)
+            self._set_progress(0 if not total else done / total)
         elif kind == "progress_reset":
-            self.progress.set(0)
+            self._set_progress(0)
         elif kind == "category":
             self._update_category_info(msg[1], msg[2])
         elif kind == "freed_delta":
@@ -1281,27 +2015,28 @@ class CleanerApp(ctk.CTk):
             self.total_freed += msg[1]
             self._total_text = i18n.t("clean.total_session",
                                       core.format_bytes(self.total_freed))
-            self.total_label.configure(text=self._total_text)
+            self._apply_total_text()
         elif kind == "simulated_size":
             self._total_text = i18n.t("clean.total_sim", core.format_bytes(msg[1]))
-            self.total_label.configure(text=self._total_text)
+            self._apply_total_text()
         elif kind == "done":
             self._set_running(False)
             self.status_label.configure(text=msg[1])
             if msg[2]:
                 messagebox.showinfo(i18n.t("dlg.ok"), msg[2])
-        elif kind == "winget_status":
-            self.winget_available = bool(msg[1])
-            self._refresh_winget_label()
+        elif kind == "installer_status":
+            self.installer_available = bool(msg[1])
+            self._refresh_installer_label()
         elif kind == "installer_log":
-            # Подробный вывод winget — в общий журнал, а в вкладке
+            # Подробный вывод установщика — в общий журнал, а в вкладке
             # «Установка» показываем последнюю строку как статус.
             self._append_log(msg[1])
             line = (msg[1] or "").strip()
-            if line:
+            if line and self._module_built(1):
                 self.install_status.configure(text=line[:150])
         elif kind == "installer_status":
-            self.install_status.configure(text=msg[1][:150])
+            if self._module_built(1):
+                self.install_status.configure(text=msg[1][:150])
         elif kind == "installer_results":
             self._show_installer_results(msg[1])
         elif kind == "installer_done":
@@ -1368,23 +2103,27 @@ class CleanerApp(ctk.CTk):
             if self.sched_status_label is not None:
                 self.sched_status_label.configure(text=msg[1])
 
-    def _check_winget_worker(self):
+    def _check_installer_worker(self):
         """Фоновая проверка готовности безопасного установщика (не блокирует UI)."""
         try:
             available = inst.is_installer_available()
         except Exception:
             available = False
-        self.msg_queue.put(("winget_status", available))
+        self.msg_queue.put(("installer_status", available))
 
-    def _refresh_winget_label(self):
+    def _refresh_installer_label(self):
         """Показывает статус установщика на текущем языке (None — ещё проверяется)."""
-        if self.winget_available is None:
-            self.winget_label.configure(text=i18n.t("winget.checking"),
-                                        text_color=COLOR_MUTED)
-        elif self.winget_available:
-            self.winget_label.configure(text=i18n.t("winget.ok"), text_color=COLOR_GREEN)
+        label = getattr(self, "installer_label", None)
+        if label is None:
+            # Модуль «Установка» ещё не открывали — подпись появится при сборке.
+            return
+        if self.installer_available is None:
+            label.configure(text=i18n.t("installer.checking"),
+                            text_color=COLOR_MUTED)
+        elif self.installer_available:
+            label.configure(text=i18n.t("installer.ok"), text_color=COLOR_GREEN)
         else:
-            self.winget_label.configure(text=i18n.t("winget.missing"), text_color=COLOR_RED)
+            label.configure(text=i18n.t("installer.missing"), text_color=COLOR_RED)
 
     def _on_close(self):
         """Закрытие окна: останавливаем фоновые операции и завершаем работу."""
@@ -1480,6 +2219,8 @@ class CleanerApp(ctk.CTk):
 
     def _show_installer_results(self, results: list):
         """Строит кликабельный список найденных пакетов."""
+        # Панель «Установка» строится лениво — список живёт внутри неё.
+        self._ensure_module(1)
         self.installer_results = results
         self.selected_pkg = None
         self.selected_row = None
@@ -1495,7 +2236,7 @@ class CleanerApp(ctk.CTk):
             return
 
         self._clear_results()
-        # Список виджетов ограничиваем: winget на общий запрос может вернуть
+        # Список виджетов ограничиваем: каталог на общий запрос может вернуть
         # сотни строк, и создание тысяч элементов «подвешивает» окно.
         # Полный список остаётся в self.installer_results — выбор по номеру
         # и по ID работает для всех найденных пакетов.
@@ -1545,6 +2286,7 @@ class CleanerApp(ctk.CTk):
         """Выбирает пакет по индексу в списке результатов."""
         if not (0 <= index < len(self.installer_results)):
             return
+        self._ensure_module(1)
         pkg = self.installer_results[index]
         self.selected_pkg = pkg
         self.selected_row = index
@@ -1589,7 +2331,7 @@ class CleanerApp(ctk.CTk):
                 return
 
         # 3) Не нашли — считаем введённое значение ID пакета (ручной ввод).
-        # ID проверяем до сохранения: он попадёт в аргументы winget, поэтому
+        # ID проверяем до сохранения: он попадёт в аргументы установщика, поэтому
         # не должен содержать пробелов, кавычек и начинаться с дефиса.
         if not inst.is_valid_package_id(text):
             messagebox.showwarning(
@@ -1600,6 +2342,7 @@ class CleanerApp(ctk.CTk):
         self.selected_pkg = {"name": text, "id": text, "version": "",
                              "source": i18n.t("pkg.source_manual")}
         self.selected_row = None
+        self._ensure_module(1)
         for i in range(len(self.pkg_cells)):
             self._paint_row(i, False)
         self.pkg_label.configure(text=i18n.t("pkg.manual", text), text_color=COLOR_TEXT)
@@ -1608,15 +2351,20 @@ class CleanerApp(ctk.CTk):
 
     def _apply_installer_buttons(self, busy: bool):
         """Включает/выключает кнопки вкладки «Установка» по состоянию busy."""
+        # Панели строятся лениво: если «Установку» ещё не открывали, кнопок
+        # нет — их состояние выставится при сборке панели.
+        if not self._module_built(1):
+            return
         self.search_btn.configure(state="disabled" if busy else "normal")
         self.upgrade_all_btn.configure(state="disabled" if busy else "normal")
         self.vc_btn.configure(state="disabled" if busy else "normal")
         for button in getattr(self, "preset_buttons", {}).values():
             button.configure(state="disabled" if busy else "normal")
-        if getattr(self, "opt_apply_btn", None):
-            self.opt_apply_btn.configure(state="disabled" if busy else "normal")
-        if getattr(self, "opt_restore_btn", None):
-            self.opt_restore_btn.configure(state="disabled" if busy else "normal")
+        if self._module_built(2):
+            if getattr(self, "opt_apply_btn", None):
+                self.opt_apply_btn.configure(state="disabled" if busy else "normal")
+            if getattr(self, "opt_restore_btn", None):
+                self.opt_restore_btn.configure(state="disabled" if busy else "normal")
         self.select_btn.configure(state="disabled" if busy else "normal")
         can_act = (not busy) and bool(self.selected_pkg)
         self.install_pkg_btn.configure(state="normal" if can_act else "disabled")
@@ -1868,7 +2616,7 @@ class CleanerApp(ctk.CTk):
     def _start_clean_worker(self, mode: str, keys: list, dry_run: bool = True):
         self._set_running(True)
         self.stop_event.clear()
-        self.progress.set(0)
+        self._set_progress(0)
         # Переиспользуем результаты уже проведённого анализа (только для очистки)
         # глубокой копией — чтобы удаление не меняло сохранённые результаты скана.
         reusable = {}
@@ -1968,15 +2716,16 @@ class CleanerApp(ctk.CTk):
     def on_search(self):
         if self.running:
             return
+        self._ensure_module(1)
         query = self.search_entry.get().strip()
         if not query:
             messagebox.showinfo(i18n.t("dlg.empty_query_title"),
                                 i18n.t("dlg.empty_query_text"))
             return
-        if self.winget_available is not True:
+        if self.installer_available is not True:
             messagebox.showinfo(
-                i18n.t("dlg.winget_title"),
-                i18n.t("dlg.winget_text"))
+                i18n.t("dlg.installer_title"),
+                i18n.t("dlg.installer_text"))
             return
         self._set_installer_running(True)
         self.selected_pkg = None
@@ -2011,14 +2760,14 @@ class CleanerApp(ctk.CTk):
 
         Список наборов — это подсказка «что обычно нужно», поэтому ставить
         весь набор целиком нельзя: сначала пользователь отмечает галочками
-        нужные программы, и только они попадают в winget.
+        нужные программы, и только они попадают в установщик.
         """
         if self.running:
             return
-        if self.winget_available is not True:
+        if self.installer_available is not True:
             messagebox.showinfo(
-                i18n.t("dlg.winget_title"),
-                i18n.t("dlg.winget_text"))
+                i18n.t("dlg.installer_title"),
+                i18n.t("dlg.installer_text"))
             return
 
         dialog = PresetDialog(self, preset)
@@ -2094,10 +2843,10 @@ class CleanerApp(ctk.CTk):
     def on_upgrade_all(self):
         if self.running:
             return
-        if self.winget_available is not True:
+        if self.installer_available is not True:
             messagebox.showinfo(
-                i18n.t("dlg.winget_title"),
-                i18n.t("dlg.winget_text"))
+                i18n.t("dlg.installer_title"),
+                i18n.t("dlg.installer_text"))
             return
         if not messagebox.askyesno(i18n.t("dlg.confirm"),
                                    i18n.t("dlg.upgrade_all_text")):
@@ -2174,10 +2923,10 @@ class CleanerApp(ctk.CTk):
         """Устанавливает ВСЕ Visual C++ Redistributable (2005–2022, x86 и x64)."""
         if self.running:
             return
-        if self.winget_available is not True:
+        if self.installer_available is not True:
             messagebox.showinfo(
-                i18n.t("dlg.winget_title"),
-                i18n.t("dlg.winget_text"))
+                i18n.t("dlg.installer_title"),
+                i18n.t("dlg.installer_text"))
             return
         count = len(inst.VC_REDIST_PACKAGES)
         if not messagebox.askyesno(
