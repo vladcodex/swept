@@ -1,0 +1,877 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Swept · Orbit — UI concept</title>
+<style>
+/* ============================================================
+   SWEPT / ORBIT — design tokens
+   ink-violet void · neon mint · electric lilac · pixel white
+   ============================================================ */
+:root{
+  --ink:#07050D; --ink-2:#0D0917; --ink-3:#150E24;
+  --glass:rgba(255,255,255,.055); --glass-2:rgba(255,255,255,.025);
+  --stroke:rgba(255,255,255,.10); --stroke-2:rgba(255,255,255,.055);
+  --mint:#57FFC6; --lilac:#A98BFF; --white:#F2EFFF;
+  --muted:rgba(242,239,255,.46); --muted-2:rgba(242,239,255,.28);
+  --amber:#FFB86B; --coral:#FF6B81;
+  --r-panel:20px; --r-btn:14px;
+  --mono:ui-monospace,"Cascadia Code","SF Mono",Consolas,monospace;
+  --ui:"Segoe UI Variable Display","Segoe UI",-apple-system,Inter,system-ui,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  background:
+    radial-gradient(1100px 700px at 18% -10%,rgba(169,139,255,.20),transparent 62%),
+    radial-gradient(900px 620px at 88% 108%,rgba(87,255,198,.12),transparent 60%),
+    radial-gradient(700px 500px at 60% 45%,rgba(169,139,255,.06),transparent 70%),
+    var(--ink);
+  color:var(--white);font-family:var(--ui);overflow:hidden;-webkit-font-smoothing:antialiased;
+}
+body::before{
+  content:"";position:fixed;inset:0;pointer-events:none;z-index:1;opacity:.55;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='140' height='140' filter='url(%23n)' opacity='.05'/></svg>");
+  mix-blend-mode:overlay;
+}
+body::after{
+  content:"";position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.30;
+  background-image:linear-gradient(rgba(169,139,255,.05) 1px,transparent 1px),
+                   linear-gradient(90deg,rgba(169,139,255,.05) 1px,transparent 1px);
+  background-size:64px 64px;
+  -webkit-mask-image:radial-gradient(circle at 50% 45%,#000 0%,transparent 78%);
+  mask-image:radial-gradient(circle at 50% 45%,#000 0%,transparent 78%);
+}
+.shell{position:relative;z-index:2;height:100%;display:flex;flex-direction:column}
+
+/* ---------- header ---------- */
+header{height:68px;display:flex;align-items:center;justify-content:space-between;padding:0 30px;flex:0 0 auto}
+.brand{display:flex;align-items:center;gap:13px}
+.brand-mark{width:30px;height:30px;border-radius:9px;position:relative;
+  background:linear-gradient(145deg,var(--mint),#1ED9A2 55%,#0E8F6C);
+  box-shadow:0 0 22px rgba(87,255,198,.45),inset 0 1px 0 rgba(255,255,255,.5)}
+.brand-mark::after{content:"";position:absolute;inset:7px 9px;border-radius:2px;background:var(--ink);
+  clip-path:polygon(0 0,100% 0,100% 38%,38% 38%,38% 100%,0 100%)}
+.brand-name{font:600 15px/1 var(--ui);letter-spacing:.22em;text-transform:uppercase}
+.brand-ver{font:500 10px/1 var(--mono);letter-spacing:.12em;color:var(--mint);
+  border:1px solid rgba(87,255,198,.28);background:rgba(87,255,198,.07);padding:5px 8px;border-radius:999px}
+.head-right{display:flex;align-items:center;gap:10px}
+.chip{font:500 10px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted);
+  padding:7px 11px;border-radius:999px;border:1px solid var(--stroke-2);background:var(--glass-2);
+  display:flex;align-items:center;gap:7px}
+.chip .dot{width:5px;height:5px;border-radius:50%;background:var(--mint);box-shadow:0 0 8px var(--mint)}
+.chip.warn{color:var(--amber);border-color:rgba(255,184,107,.25);background:rgba(255,184,107,.06)}
+.chip.warn .dot{background:var(--amber);box-shadow:0 0 8px var(--amber)}
+.lang{display:flex;align-items:center;padding:3px;border-radius:999px;border:1px solid var(--stroke-2);
+  background:var(--glass-2);position:relative}
+.lang button{appearance:none;border:0;background:transparent;cursor:pointer;font:600 10px/1 var(--mono);
+  letter-spacing:.12em;color:var(--muted);padding:7px 11px;border-radius:999px;position:relative;z-index:1;
+  transition:color .25s}
+.lang button.on{color:var(--ink)}
+.lang-pill{position:absolute;top:3px;bottom:3px;left:3px;width:37px;border-radius:999px;background:var(--mint);
+  box-shadow:0 0 18px rgba(87,255,198,.4);transition:transform .35s cubic-bezier(.2,.8,.2,1),width .35s}
+.lang[data-lang="en"] .lang-pill{transform:translateX(37px);width:38px}
+
+/* ---------- grid ---------- */
+.stage-wrap{flex:1 1 auto;display:grid;grid-template-columns:276px minmax(0,1fr) 300px;
+  gap:20px;padding:0 28px;min-height:0}
+.panel{background:linear-gradient(180deg,var(--glass),var(--glass-2));border:1px solid var(--stroke);
+  border-radius:var(--r-panel);backdrop-filter:blur(22px) saturate(120%);
+  -webkit-backdrop-filter:blur(22px) saturate(120%);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 30px 60px rgba(0,0,0,.38);padding:17px 17px 15px;min-height:0}
+.panel-title{font:600 9.5px/1 var(--mono);letter-spacing:.2em;text-transform:uppercase;color:var(--muted-2);
+  margin-bottom:15px;display:flex;justify-content:space-between;align-items:center}
+.panel-title span{color:var(--mint);opacity:.75}
+
+/* left rail */
+.rail-left{display:flex;flex-direction:column;gap:14px;overflow:hidden}
+.stat{margin-bottom:14px}
+.stat-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:7px}
+.stat-name{font:500 11.5px/1 var(--ui);color:var(--muted)}
+.stat-val{font:600 12px/1 var(--mono);font-variant-numeric:tabular-nums}
+.bar{height:4px;border-radius:99px;background:rgba(255,255,255,.07);overflow:hidden}
+.bar i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--mint),#23E0A8);
+  box-shadow:0 0 12px rgba(87,255,198,.5);transition:width 1.1s cubic-bezier(.2,.8,.2,1)}
+.bar.lilac i{background:linear-gradient(90deg,var(--lilac),#7C5CFF);box-shadow:0 0 12px rgba(169,139,255,.45)}
+.divider{height:1px;background:var(--stroke-2);margin:4px 0 14px}
+.micro{display:flex;flex-direction:column;gap:10px}
+.micro-row{display:flex;align-items:center;gap:9px;font:500 11px/1.3 var(--ui);color:var(--muted)}
+.micro-row svg{flex:0 0 auto;width:14px;height:14px;opacity:.75}
+.micro-row b{margin-left:auto;font:600 11px/1 var(--mono);color:var(--white)}
+.spark{margin-top:auto;padding-top:10px}
+.spark svg{width:100%;height:52px;display:block;overflow:visible}
+
+/* center */
+.stage{position:relative;border-radius:26px;overflow:hidden;border:1px solid rgba(255,255,255,.05);
+  background:radial-gradient(circle at 50% 48%,rgba(169,139,255,.10),rgba(7,5,13,0) 62%);min-height:0;
+  transition:transform .5s cubic-bezier(.2,.8,.2,1);transform-style:preserve-3d}
+#field{position:absolute;inset:0;width:100%;height:100%}
+.stage-inner{position:absolute;inset:0;display:grid;place-items:center}
+/* fixed design box, scaled as a whole so nothing ever collides */
+.system{position:relative;width:562px;height:562px;display:grid;place-items:center;
+  transform-origin:50% 50%;transition:transform .2s linear}
+
+/* transient feedback */
+.toast{position:absolute;top:14px;left:50%;z-index:6;transform:translate(-50%,-14px);
+  font:500 11px/1 var(--ui);color:var(--white);padding:11px 16px;border-radius:12px;
+  background:rgba(13,9,23,.92);border:1px solid rgba(87,255,198,.28);
+  backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  box-shadow:0 14px 34px rgba(0,0,0,.5),0 0 24px rgba(87,255,198,.12);
+  opacity:0;pointer-events:none;white-space:nowrap;
+  transition:opacity .28s,transform .28s cubic-bezier(.2,.8,.2,1)}
+.toast.on{opacity:1;transform:translate(-50%,0)}
+.toast.warn{border-color:rgba(255,184,107,.32);box-shadow:0 14px 34px rgba(0,0,0,.5),0 0 24px rgba(255,184,107,.14)}
+
+.core{position:relative;width:288px;height:288px;display:grid;place-items:center;z-index:2}
+.core-halo{position:absolute;inset:-46px;border-radius:50%;
+  background:radial-gradient(circle,rgba(255,107,129,.16),transparent 62%);filter:blur(8px);
+  animation:breathe 6s ease-in-out infinite;transition:background .8s}
+.core-halo.mint{background:radial-gradient(circle,rgba(87,255,198,.18),transparent 62%)}
+@keyframes breathe{0%,100%{transform:scale(1);opacity:.85}50%{transform:scale(1.06);opacity:1}}
+.core-disc{position:absolute;inset:0;border-radius:50%;
+  background:radial-gradient(circle at 32% 26%,rgba(255,255,255,.16),transparent 42%),
+             radial-gradient(circle at 62% 78%,rgba(169,139,255,.22),transparent 55%),
+             radial-gradient(circle at 50% 50%,#171027 0%,#0C0817 62%,#08050F 100%);
+  border:1px solid rgba(255,255,255,.09);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.14),inset 0 -30px 60px rgba(0,0,0,.55),
+             0 0 80px rgba(87,255,198,.10),0 40px 80px rgba(0,0,0,.5)}
+.core-dash{position:absolute;inset:-15px;border-radius:50%;border:1px dashed rgba(169,139,255,.26);
+  animation:spin 40s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.core-svg{position:absolute;inset:-8px;transform:rotate(-90deg)}
+.core-svg circle{fill:none;stroke-width:2.5;stroke-linecap:round}
+.core-svg .track{stroke:rgba(255,255,255,.06)}
+.core-svg .prog{stroke:var(--mint);filter:drop-shadow(0 0 8px rgba(87,255,198,.7));
+  transition:stroke-dashoffset .5s linear,stroke .6s}
+.core-read{position:relative;text-align:center;z-index:3}
+.core-label{font:600 9px/1 var(--mono);letter-spacing:.24em;color:var(--muted-2);margin-bottom:9px}
+.core-value{font:300 52px/1 var(--mono);letter-spacing:-.03em;font-variant-numeric:tabular-nums;
+  text-shadow:0 0 30px rgba(87,255,198,.25)}
+.core-value small{font-size:20px;letter-spacing:.02em;color:var(--muted);margin-left:4px}
+.core-sub{margin-top:9px;font:500 10.5px/1.4 var(--ui);color:var(--muted)}
+.core-hint{margin-top:8px;font:600 8.5px/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;
+  color:rgba(87,255,198,.55);transition:color .3s}
+.core-hint.alert{color:rgba(255,184,107,.75)}
+.wave{position:absolute;inset:0;border-radius:50%;border:1px solid var(--mint);
+  opacity:0;pointer-events:none}
+.wave.go{animation:wave 1.5s cubic-bezier(.2,.6,.3,1)}
+@keyframes wave{0%{transform:scale(.7);opacity:.9}100%{transform:scale(2.3);opacity:0}}
+
+/* orbit */
+.orbit{position:absolute;inset:0;z-index:3;pointer-events:none}
+.orbit-ring{position:absolute;left:50%;top:50%;width:470px;height:470px;margin:-235px 0 0 -235px;
+  border-radius:50%;border:1px solid rgba(255,255,255,.07)}
+.orbit-ring::after{content:"";position:absolute;inset:26px;border-radius:50%;border:1px dashed rgba(169,139,255,.10)}
+.ring{position:absolute;left:50%;top:50%;width:0;height:0}
+.orbit.ready .ring{transition:transform .75s cubic-bezier(.2,.8,.2,1)}
+.node{position:absolute;left:0;top:0;width:92px;height:92px;margin:-46px 0 0 -46px;
+  pointer-events:auto;background:none;border:0;cursor:pointer;padding:0;
+  transition:transform .75s cubic-bezier(.2,.8,.2,1)}
+.node-inner{width:92px;height:92px}
+.orbit.ready .node-inner{transition:transform .75s cubic-bezier(.2,.8,.2,1)}
+.node-face{width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;
+  border-radius:50%;border:1px solid rgba(255,255,255,.09);
+  background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.015));
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 18px 34px rgba(0,0,0,.4);
+  transition:transform .3s cubic-bezier(.2,.8,.2,1),border-color .3s,box-shadow .3s,background .3s}
+.node:hover .node-face{transform:scale(1.08);border-color:rgba(87,255,198,.35);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.12),0 0 34px rgba(87,255,198,.22),0 18px 34px rgba(0,0,0,.4)}
+.node svg{width:22px;height:22px;stroke:var(--muted);fill:none;stroke-width:1.5;transition:stroke .3s}
+.node-label{font:600 8.5px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted-2);
+  transition:color .3s}
+.node.on .node-face{background:linear-gradient(180deg,rgba(87,255,198,.16),rgba(87,255,198,.04));
+  border-color:rgba(87,255,198,.55);box-shadow:inset 0 1px 0 rgba(255,255,255,.16),0 0 44px rgba(87,255,198,.3)}
+.node.on svg{stroke:var(--mint)}
+.node.on .node-label{color:var(--mint)}
+.node:focus-visible{outline:none}
+.node:focus-visible .node-face{border-color:var(--mint);
+  box-shadow:0 0 0 3px rgba(87,255,198,.22),0 0 34px rgba(87,255,198,.3)}
+.btn:focus-visible,.lang button:focus-visible,.hchip:focus-visible{
+  outline:2px solid var(--mint);outline-offset:3px}
+
+/* right rail */
+.rail-right{display:flex;flex-direction:column;overflow:hidden}
+.log{display:flex;flex-direction:column;gap:2px;overflow:hidden;flex:1 1 auto}
+.log-row{display:grid;grid-template-columns:10px 1fr auto;gap:9px;align-items:start;padding:9px 0;
+  border-bottom:1px solid rgba(255,255,255,.045);animation:slideIn .35s ease both}
+@keyframes slideIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+.log-dot{width:6px;height:6px;border-radius:50%;margin-top:4px;background:var(--mint);box-shadow:0 0 8px rgba(87,255,198,.6)}
+.log-dot.lilac{background:var(--lilac);box-shadow:0 0 8px rgba(169,139,255,.6)}
+.log-dot.amber{background:var(--amber);box-shadow:0 0 8px rgba(255,184,107,.6)}
+.log-text{font:500 11px/1.45 var(--ui);color:rgba(242,239,255,.82)}
+.log-text i{display:block;font-style:normal;font:500 9.5px/1.4 var(--ui);color:var(--muted-2);margin-top:2px}
+.log-time{font:500 9.5px/1 var(--mono);color:var(--muted-2);padding-top:2px}
+.log-foot{margin-top:auto;padding-top:12px;display:flex;justify-content:space-between;
+  font:500 9.5px/1 var(--mono);letter-spacing:.1em;color:var(--muted-2);text-transform:uppercase}
+
+/* ---------- ribbon ---------- */
+.ribbon{flex:0 0 auto;margin:16px 28px 22px;padding:16px 20px;border-radius:22px;
+  background:linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,.02));
+  border:1px solid var(--stroke);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.07),0 26px 50px rgba(0,0,0,.42);
+  display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:22px;align-items:center}
+.rb-title{font:600 15px/1.2 var(--ui)}
+.rb-sub{margin-top:5px;font:500 10.5px/1.3 var(--ui);color:var(--muted)}
+.rb-chips{display:flex;flex-wrap:wrap;gap:7px;justify-content:center}
+.hchip{font:500 10px/1 var(--mono);letter-spacing:.06em;color:rgba(242,239,255,.7);cursor:pointer;
+  padding:8px 11px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.07);
+  clip-path:polygon(9px 0,100% 0,100% calc(100% - 9px),calc(100% - 9px) 100%,0 100%,0 9px);
+  transition:background .25s,color .25s,border-color .25s,transform .15s}
+.hchip:hover{background:rgba(87,255,198,.10);color:var(--mint);border-color:rgba(87,255,198,.3)}
+.hchip:active{transform:scale(.96)}
+.hchip[aria-pressed="true"]{background:rgba(87,255,198,.16);color:var(--mint);
+  border-color:rgba(87,255,198,.45);box-shadow:0 0 16px rgba(87,255,198,.16)}
+.rb-keys{display:flex;align-items:center;gap:6px;margin-top:9px;
+  font:500 9px/1 var(--mono);letter-spacing:.08em;color:var(--muted-2);text-transform:uppercase}
+.rb-keys kbd{font:600 9px/1 var(--mono);padding:3px 5px;border-radius:5px;color:var(--muted);
+  background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-bottom-width:2px}
+.rb-keys em{font-style:normal;margin:0 3px 0 7px;color:rgba(242,239,255,.22)}
+.rb-actions{display:flex;gap:10px;align-items:center}
+.btn{appearance:none;border:0;cursor:pointer;font:600 10.5px/1 var(--mono);letter-spacing:.14em;
+  text-transform:uppercase;padding:13px 20px;border-radius:var(--r-btn);transition:all .25s}
+.btn-primary{background:linear-gradient(180deg,#6BFFD2,var(--mint));color:#04140F;
+  box-shadow:0 0 0 1px rgba(87,255,198,.4),0 10px 26px rgba(87,255,198,.22),inset 0 1px 0 rgba(255,255,255,.5)}
+.btn-primary:hover{filter:brightness(1.06);box-shadow:0 0 0 1px rgba(87,255,198,.6),0 14px 34px rgba(87,255,198,.32),inset 0 1px 0 rgba(255,255,255,.5)}
+.btn-ghost{background:rgba(255,255,255,.045);color:rgba(242,239,255,.8);border:1px solid rgba(255,255,255,.09)}
+.btn-ghost:hover{background:rgba(255,255,255,.08);color:var(--white)}
+.btn:disabled{opacity:.42;cursor:not-allowed;filter:none;box-shadow:none}
+
+@media (max-width:1200px){
+  .stage-wrap{grid-template-columns:230px minmax(0,1fr) 250px;gap:14px;padding:0 18px}
+  .ribbon{margin:12px 18px 16px}
+  .hchip{font-size:9px;padding:7px 9px}
+  .rb-keys{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.001ms !important;animation-iteration-count:1 !important;
+    transition-duration:.001ms !important;scroll-behavior:auto !important}
+}
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <header>
+    <div class="brand">
+      <div class="brand-mark"></div>
+      <div class="brand-name">Swept</div>
+      <div class="brand-ver">v1.2.0</div>
+    </div>
+    <div class="head-right">
+      <div class="chip" id="adminChip"><span class="dot"></span><span data-t="admin">ADMIN</span></div>
+      <div class="lang" id="lang" data-lang="ru">
+        <div class="lang-pill"></div>
+        <button data-lang="ru" class="on">RU</button>
+        <button data-lang="en">EN</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="stage-wrap">
+
+    <!-- left: telemetry -->
+    <aside class="panel rail-left">
+      <div class="panel-title">System <span>live</span></div>
+
+      <div class="stat">
+        <div class="stat-head"><span class="stat-name" data-t="disk">Диск C:</span><span class="stat-val" id="diskVal">68%</span></div>
+        <div class="bar"><i id="diskBar" style="width:68%"></i></div>
+      </div>
+      <div class="stat">
+        <div class="stat-head"><span class="stat-name" data-t="temp">Временные файлы</span><span class="stat-val" id="tempVal">23.2 MB</span></div>
+        <div class="bar lilac"><i id="tempBar" style="width:42%"></i></div>
+      </div>
+      <div class="stat">
+        <div class="stat-head"><span class="stat-name" data-t="bin">Корзина</span><span class="stat-val" id="binVal">54.0 MB</span></div>
+        <div class="bar lilac"><i id="binBar" style="width:66%"></i></div>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="micro">
+        <div class="micro-row">
+          <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.5"><path d="M12 3v18M3 12h18"/></svg>
+          <span data-t="categories">Категорий</span><b>15</b>
+        </div>
+        <div class="micro-row">
+          <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.5"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
+          <span data-t="files">Файлов к удалению</span><b id="filesVal">1 248</b>
+        </div>
+        <div class="micro-row">
+          <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.5"><path d="M12 3l8 4v6c0 4-3.5 7-8 8-4.5-1-8-4-8-8V7z"/></svg>
+          <span data-t="restore">Точка восстановления</span><b style="color:var(--mint)">ON</b>
+        </div>
+      </div>
+
+      <div class="spark">
+        <svg viewBox="0 0 240 52" preserveAspectRatio="none">
+          <defs><linearGradient id="sg" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#57FFC6" stop-opacity=".35"/>
+            <stop offset="100%" stop-color="#57FFC6" stop-opacity="0"/>
+          </linearGradient></defs>
+          <path d="M0,40 L24,34 L48,37 L72,26 L96,30 L120,18 L144,22 L168,12 L192,16 L216,8 L240,11 L240,52 L0,52 Z" fill="url(#sg)"/>
+          <path d="M0,40 L24,34 L48,37 L72,26 L96,30 L120,18 L144,22 L168,12 L192,16 L216,8 L240,11"
+                fill="none" stroke="#57FFC6" stroke-width="1.4" stroke-linejoin="round" opacity=".85"/>
+        </svg>
+      </div>
+    </aside>
+
+    <!-- center: stage -->
+    <section class="stage" id="stage">
+      <canvas id="field"></canvas>
+      <div class="stage-inner">
+        <div class="system" id="system">
+          <div class="core" id="core">
+            <div class="core-halo" id="halo"></div>
+            <div class="core-dash"></div>
+            <div class="core-disc"></div>
+            <svg class="core-svg" viewBox="0 0 304 304">
+              <circle class="track" cx="152" cy="152" r="150"></circle>
+              <circle class="prog" id="prog" cx="152" cy="152" r="150"
+                      stroke-dasharray="942" stroke-dashoffset="942"></circle>
+            </svg>
+            <div class="core-read">
+              <div class="core-label" data-t="reclaim">Можно освободить</div>
+              <div class="core-value" id="reclaim">1.12<small>GB</small></div>
+              <div class="core-sub" id="coreSub">15 категорий · 1 248 файлов</div>
+              <div class="core-hint" id="coreHint">Нажмите «Анализ», чтобы начать</div>
+            </div>
+            <div class="wave" id="wave"></div>
+          </div>
+
+          <div class="orbit">
+            <div class="orbit-ring"></div>
+            <div class="ring" id="ring" role="tablist" aria-label="Модули"></div>
+          </div>
+        </div>
+      </div>
+      <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    </section>
+
+    <!-- right: flight recorder -->
+    <aside class="panel rail-right">
+      <div class="panel-title">Flight recorder <span id="logCount">4</span></div>
+      <div class="log" id="log">
+        <div class="log-row">
+          <div class="log-dot"></div>
+          <div class="log-text">Очистка · 12.6 МБ<i>удалено 77 объектов</i></div>
+          <div class="log-time">15:12</div>
+        </div>
+        <div class="log-row">
+          <div class="log-dot lilac"></div>
+          <div class="log-text">Анализ · 1.12 ГБ<i>15 категорий, 1 248 файлов</i></div>
+          <div class="log-time">14:58</div>
+        </div>
+        <div class="log-row">
+          <div class="log-dot"></div>
+          <div class="log-text">Оптимизация · 8 твиков<i>точка восстановления создана</i></div>
+          <div class="log-time">12:30</div>
+        </div>
+        <div class="log-row">
+          <div class="log-dot amber"></div>
+          <div class="log-text">Расписание · пропуск<i>операция уже выполнялась</i></div>
+          <div class="log-time">11:02</div>
+        </div>
+      </div>
+      <div class="log-foot"><span data-t="stored">Хранится локально</span><span>1 248</span></div>
+    </aside>
+  </div>
+
+  <!-- ribbon -->
+  <footer class="ribbon">
+    <div>
+      <div class="rb-title" id="rbTitle">Очистка</div>
+      <div class="rb-sub" id="rbSub">15 категорий · 1 248 файлов · 1.12 ГБ</div>
+      <div class="rb-keys">
+        <kbd>←</kbd><kbd>→</kbd><em>модуль</em>
+        <kbd>Enter</kbd><em>действие</em>
+        <kbd>Esc</kbd><em>отмена</em>
+      </div>
+    </div>
+    <div class="rb-chips" id="rbChips"></div>
+    <div class="rb-actions">
+      <button class="btn btn-ghost" id="btnSecondary">Очистить</button>
+      <button class="btn btn-primary" id="btnPrimary">Анализ</button>
+    </div>
+  </footer>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ---------------- i18n ---------------- */
+  const T = {
+    ru: {
+      admin:"ADMIN", disk:"Диск C:", temp:"Временные файлы", bin:"Корзина",
+      categories:"Категорий", files:"Файлов к удалению", restore:"Точка восстановления",
+      reclaim:"Можно освободить", stored:"Хранится локально",
+      cleaned:"Очищено только что", found:"найдено при анализе"
+    },
+    en: {
+      admin:"ADMIN", disk:"Drive C:", temp:"Temp files", bin:"Recycle Bin",
+      categories:"Categories", files:"Files to remove", restore:"Restore point",
+      reclaim:"Reclaimable", stored:"Stored locally",
+      cleaned:"Cleaned just now", found:"found on analysis"
+    }
+  };
+
+  /* ---------------- modules ---------------- */
+  const MODULES = [
+    { id:"clean", ru:"Очистка", en:"Cleanup",
+      subRu:"15 категорий · 1 248 файлов · 1.12 ГБ", subEn:"15 categories · 1 248 files · 1.12 GB",
+      primaryRu:"Анализ", primaryEn:"Analyze", secondaryRu:"Очистить", secondaryEn:"Clean",
+      fbRu:["Анализ завершён · 1.12 ГБ найдено","Очищено · 1.12 ГБ освобождено"],
+      fbEn:["Analysis done · 1.12 GB found","Cleaned · 1.12 GB freed"],
+      chipsRu:["Temp","Браузеры","Корзина","Update","Логи","Дампы","Игры"],
+      chipsEn:["Temp","Browsers","Recycle","Update","Logs","Dumps","Games"],
+      icon:'<path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/><path d="M10 11v5M14 11v5"/>' },
+    { id:"install", ru:"Установка", en:"Install",
+      subRu:"24 программы · 12 пакетов VC++", subEn:"24 programs · 12 VC++ packages",
+      primaryRu:"Каталог", primaryEn:"Catalog", secondaryRu:"Обновить", secondaryEn:"Refresh",
+      fbRu:["Каталог открыт · 24 программы","Каталог обновлён"],
+      fbEn:["Catalog opened · 24 programs","Catalog refreshed"],
+      chipsRu:["Лаунчеры","Браузеры","Чат","Офис","Медиа","Архиваторы","Утилиты"],
+      chipsEn:["Launchers","Browsers","Chat","Office","Media","Archivers","Utilities"],
+      icon:'<path d="M12 3v10M12 3l-3 3M12 3l3 3"/><path d="M4 14v5a2 2 0 002 2h12a2 2 0 002-2v-5"/>' },
+    { id:"optimize", ru:"Оптимизация", en:"Optimize",
+      subRu:"12 твиков · точка восстановления", subEn:"12 tweaks · restore point",
+      primaryRu:"Применить", primaryEn:"Apply", secondaryRu:"Точка восст.", secondaryEn:"Restore point",
+      fbRu:["Применено 12 твиков","Точка восстановления создана"],
+      fbEn:["12 tweaks applied","Restore point created"],
+      chipsRu:["Телеметрия","Питание","Фон","Game DVR","Деблоат","Виджеты"],
+      chipsEn:["Telemetry","Power","Background","Game DVR","Debloat","Widgets"],
+      icon:'<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>' },
+    { id:"schedule", ru:"Расписание", en:"Schedule",
+      subRu:"Ежедневно · 03:00 · выключено", subEn:"Daily · 03:00 · off",
+      primaryRu:"Включить", primaryEn:"Enable", secondaryRu:"Запустить", secondaryEn:"Run now",
+      fbRu:["Расписание включено · ежедневно в 03:00","Запущено сейчас"],
+      fbEn:["Schedule enabled · daily at 03:00","Started now"],
+      chipsRu:["Ежедневно","Еженедельно","03:00","Точка восст.","Сухой прогон"],
+      chipsEn:["Daily","Weekly","03:00","Restore point","Dry run"],
+      icon:'<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>' },
+    { id:"log", ru:"Журнал", en:"Log",
+      subRu:"1 248 записей · сегодня", subEn:"1 248 entries · today",
+      primaryRu:"Экспорт", primaryEn:"Export", secondaryRu:"Очистить", secondaryEn:"Clear",
+      fbRu:["Журнал экспортирован в CSV","Журнал очищен"],
+      fbEn:["Log exported to CSV","Log cleared"],
+      chipsRu:["Всё","Удалено","Пропущено","Ошибки"],
+      chipsEn:["All","Removed","Skipped","Errors"],
+      icon:'<path d="M5 4h11l3 3v13H5z"/><path d="M8 9h8M8 13h8M8 17h5"/>' }
+  ];
+
+  /* ---------------- interface strings ---------------- */
+  const UI = {
+    ru: {
+      hintIdle:"Нажмите «Анализ», чтобы начать",
+      hintAct:"Выберите действие ниже",
+      hintReady:"Готово · выберите «Очистить»",
+      hintBusy:"Идёт работа · Esc — отмена",
+      hintCancel:"Отменено · можно запустить снова",
+      hintDone:"Готово · всё чисто",
+      cancel:"Отмена",
+      toastCancelled:"Операция отменена"
+    },
+    en: {
+      hintIdle:"Press Analyze to start",
+      hintAct:"Choose an action below",
+      hintReady:"Ready · choose Clean",
+      hintBusy:"Working · Esc to cancel",
+      hintCancel:"Cancelled · run again anytime",
+      hintDone:"Done · all clear",
+      cancel:"Cancel",
+      toastCancelled:"Operation cancelled"
+    }
+  };
+
+  let lang = "ru";
+  try {
+    const saved = localStorage.getItem("swept.lang");
+    if (saved === "ru" || saved === "en") lang = saved;
+  } catch (e) { /* file:// без хранилища — не критично */ }
+
+  let current = 0;
+  let busy = false;
+  let job = null;
+  let analyzed = false;
+  let files = 1248;
+  let lastValue = 1.12;          // последнее устойчивое значение в центре
+
+  const $ = s => document.querySelector(s);
+  const ring = $("#ring");
+  const reclaimEl = $("#reclaim");
+  const coreSub = $("#coreSub");
+  const coreHint = $("#coreHint");
+  const prog = $("#prog");
+  const halo = $("#halo");
+  const wave = $("#wave");
+  const toastEl = $("#toast");
+  const btnPrimary = $("#btnPrimary");
+  const btnSecondary = $("#btnSecondary");
+
+  /* chips запоминают выбор отдельно для каждого модуля */
+  const chipState = MODULES.map(m => m.chipsRu.map(() => false));
+
+  /* ---------------- feedback ---------------- */
+  let toastTimer = 0;
+  function toast(msg, warn){
+    toastEl.textContent = msg;
+    toastEl.classList.toggle("warn", !!warn);
+    toastEl.classList.add("on");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toastEl.classList.remove("on"), 2300);
+  }
+
+  function setHint(key, alert){
+    coreHint.textContent = UI[lang][key];
+    coreHint.classList.toggle("alert", !!alert);
+  }
+
+  /* ---------------- build nodes ---------------- */
+  const NODE_R = 235;
+  const nodes = MODULES.map((m, i) => {
+    const angle = i * 72;          // rotate(0) + translateY(-R) = верхняя точка
+    const btn = document.createElement("button");
+    btn.className = "node";
+    btn.type = "button";
+    btn.setAttribute("role", "tab");
+    btn.setAttribute("aria-selected", "false");
+    btn.setAttribute("aria-label", m.ru);
+    btn.tabIndex = -1;
+    btn.style.transform = `rotate(${angle}deg) translateY(-${NODE_R}px)`;
+    btn.style.setProperty("--a", angle);
+    btn.title = m.ru;
+    btn.innerHTML =
+      `<div class="node-inner">
+         <div class="node-face">
+           <svg viewBox="0 0 24 24" aria-hidden="true">${m.icon}</svg>
+           <div class="node-label">${m.ru}</div>
+         </div>
+       </div>`;
+    btn.addEventListener("click", () => select(i));
+    ring.appendChild(btn);
+    return { el: btn, angle, inner: btn.querySelector(".node-inner") };
+  });
+
+  function rotateRing(rot){
+    ring.style.transform = `rotate(${rot}deg)`;
+    nodes.forEach(n => {
+      n.el.querySelector(".node-inner").style.transform =
+        `rotate(${-(n.angle + rot)}deg)`;
+    });
+  }
+
+  function idleHint(){
+    if (current !== 0) return "hintAct";
+    if (!files) return "hintDone";
+    if (analyzed) return "hintReady";
+    return "hintIdle";
+  }
+
+  function select(i){
+    current = i;
+    const rot = -72 * i;
+    rotateRing(rot);
+    nodes.forEach((n, k) => {
+      const on = k === i;
+      n.el.classList.toggle("on", on);
+      n.el.setAttribute("aria-selected", on ? "true" : "false");
+      n.el.tabIndex = on ? 0 : -1;
+    });
+    renderRibbon();
+    coreSub.textContent = lang === "ru"
+      ? MODULES[i].subRu : MODULES[i].subEn;
+    if (!busy) setHint(idleHint());
+  }
+
+  function renderRibbon(){
+    const m = MODULES[current];
+    const ru = lang === "ru";
+    $("#rbTitle").textContent = ru ? m.ru : m.en;
+    $("#rbSub").textContent = ru ? m.subRu : m.subEn;
+    $("#rbChips").innerHTML = (ru ? m.chipsRu : m.chipsEn)
+      .map((c, k) =>
+        `<button type="button" class="hchip" aria-pressed="${chipState[current][k]}">${c}</button>`)
+      .join("");
+    btnPrimary.textContent = busy ? UI[lang].cancel : (ru ? m.primaryRu : m.primaryEn);
+    btnSecondary.textContent = ru ? m.secondaryRu : m.secondaryEn;
+    btnSecondary.disabled = busy;
+    nodes.forEach((n, k) => {
+      const label = ru ? MODULES[k].ru : MODULES[k].en;
+      n.el.querySelector(".node-label").textContent = label;
+      n.el.title = label;
+      n.el.setAttribute("aria-label", label);
+    });
+  }
+
+  /* ---------------- language ---------------- */
+  document.querySelectorAll(".lang button").forEach(b => {
+    b.addEventListener("click", () => {
+      lang = b.dataset.lang;
+      try { localStorage.setItem("swept.lang", lang); } catch (e) { /* ignore */ }
+      $("#lang").dataset.lang = lang;
+      document.querySelectorAll(".lang button").forEach(x =>
+        x.classList.toggle("on", x.dataset.lang === lang));
+      document.querySelectorAll("[data-t]").forEach(el => {
+        const k = el.dataset.t;
+        if (T[lang][k]) el.textContent = T[lang][k];
+      });
+      renderRibbon();
+      coreSub.textContent = lang === "ru" ? MODULES[current].subRu : MODULES[current].subEn;
+      if (!busy) setHint(idleHint());
+    });
+  });
+
+  /* ---------------- value animation ---------------- */
+  function setValue(gb, sub){
+    reclaimEl.innerHTML = gb > 0
+      ? `${gb.toFixed(2)}<small>GB</small>`
+      : `0<small>B</small>`;
+    if (sub !== undefined) coreSub.textContent = sub;
+  }
+
+  function setProgress(p){
+    prog.style.strokeDashoffset = String(942 * (1 - p));
+  }
+
+  /* ---------------- actions ---------------- */
+  function setBusy(on){
+    busy = on;
+    btnPrimary.disabled = false;      // во время работы кнопка становится «Отмена»
+    renderRibbon();
+    setHint(on ? "hintBusy" : idleHint(), false);
+  }
+
+  function fireWave(){
+    wave.classList.remove("go");
+    void wave.offsetWidth;
+    wave.classList.add("go");
+  }
+
+  function run(mode){
+    if (busy) return;
+    setBusy(true);
+    fireWave();
+
+    const scan = mode === "scan";
+    scanning = scan;
+    if (!scan) vacuum = 1;
+
+    const from = scan ? 0 : 1.12;
+    const to   = scan ? 1.12 : 0;
+    const dur  = scan ? 1500 : 1600;
+    const t0   = performance.now();
+
+    /* считаем прогресс по реальному времени, а не по кадрам:
+       rAF в фоновой вкладке душится и операция зависла бы навсегда */
+    const iv = setInterval(() => {
+      const k = Math.min(1, (performance.now() - t0) / dur);
+      const e = 1 - Math.pow(1 - k, 3);
+      setValue(from + (to - from) * e);
+      setProgress(scan ? k : 1 - k);
+      if (k >= 1){ clearInterval(iv); finish(mode); }
+    }, 30);
+
+    job = { iv };
+  }
+
+  function finish(mode){
+    if (job) clearInterval(job.iv);
+    job = null;
+    scanning = false;
+    const ru = lang === "ru";
+
+    if (mode === "scan"){
+      analyzed = true;
+      setProgress(1);
+      setValue(1.12, ru ? "15 категорий · 1 248 файлов" : "15 categories · 1 248 files");
+      addLog("Анализ · 1.12 ГБ", ru ? "15 категорий, 1 248 файлов" : "15 categories, 1 248 files", "lilac");
+    } else {
+      files = 0;
+      setProgress(0);
+      halo.classList.add("mint");
+      $("#filesVal").textContent = "0";
+      $("#tempVal").textContent = "0 B"; $("#tempBar").style.width = "0%";
+      $("#binVal").textContent = "0 B";  $("#binBar").style.width = "0%";
+      setValue(0, ru ? "Очищено только что" : "Cleaned just now");
+      addLog("Очистка · 1.12 ГБ", ru ? "удалено 1 248 объектов · 3 пропущено" : "1 248 items removed · 3 skipped", "");
+      setTimeout(() => { vacuum = 0; }, 900);
+    }
+
+    setBusy(false);
+    lastValue = mode === "scan" ? 1.12 : 0;
+    toast(MODULES[0][ru ? "fbRu" : "fbEn"][mode === "scan" ? 0 : 1]);
+  }
+
+  function cancelJob(){
+    if (!job) return;
+    clearInterval(job.iv);
+    job = null;
+    scanning = false;
+    vacuum = 0;
+    /* откатываем недокрученное значение, чтобы в центре не висело «0.85 GB» */
+    setValue(lastValue);
+    setProgress(lastValue > 0 ? 1 : 0);
+    coreSub.textContent = lang === "ru" ? MODULES[current].subRu : MODULES[current].subEn;
+    setBusy(false);
+    setHint("hintCancel", true);
+    toast(UI[lang].toastCancelled, true);
+  }
+
+  /* ---------------- wiring ---------------- */
+  btnPrimary.addEventListener("click", () => {
+    if (busy) { cancelJob(); return; }
+    const ru = lang === "ru";
+    const m = MODULES[current];
+    if (current === 0) { run("scan"); return; }
+    toast(m[ru ? "fbRu" : "fbEn"][0]);
+    addLog(m[ru ? "ru" : "en"] + " · " + m[ru ? "primaryRu" : "primaryEn"], "", "lilac");
+  });
+
+  btnSecondary.addEventListener("click", () => {
+    if (busy) return;
+    const ru = lang === "ru";
+    const m = MODULES[current];
+    if (current === 0) { run("clean"); return; }
+    toast(m[ru ? "fbRu" : "fbEn"][1]);
+    addLog(m[ru ? "ru" : "en"] + " · " + m[ru ? "secondaryRu" : "secondaryEn"], "", "");
+  });
+
+  /* чипы фильтров — переключаются и запоминаются по модулям */
+  $("#rbChips").addEventListener("click", e => {
+    const chip = e.target.closest(".hchip");
+    if (!chip) return;
+    const idx = Array.prototype.indexOf.call($("#rbChips").children, chip);
+    if (idx < 0) return;
+    chipState[current][idx] = !chipState[current][idx];
+    chip.setAttribute("aria-pressed", String(chipState[current][idx]));
+  });
+
+  /* клавиатура: ← → модуль, Enter действие, Esc отмена */
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape" && busy) { e.preventDefault(); cancelJob(); return; }
+    if (e.key !== "ArrowRight" && e.key !== "ArrowDown" &&
+        e.key !== "ArrowLeft"  && e.key !== "ArrowUp") return;
+    e.preventDefault();
+    const dir = (e.key === "ArrowRight" || e.key === "ArrowDown") ? 1 : -1;
+    const next = (current + dir + MODULES.length) % MODULES.length;
+    select(next);
+    nodes[next].el.focus();
+  });
+
+  /* ---------------- log ---------------- */
+  function addLog(text, sub, cls){
+    const log = $("#log");
+    const row = document.createElement("div");
+    row.className = "log-row";
+    const now = new Date();
+    const time = String(now.getHours()).padStart(2,"0") + ":" +
+                 String(now.getMinutes()).padStart(2,"0");
+    row.innerHTML =
+      `<div class="log-dot ${cls}"></div>
+       <div class="log-text">${text}${sub ? `<i>${sub}</i>` : ""}</div>
+       <div class="log-time">${time}</div>`;
+    log.insertBefore(row, log.firstChild);
+    while (log.children.length > 7) log.removeChild(log.lastChild);
+    $("#logCount").textContent = String(log.children.length);
+  }
+
+  /* ---------------- particles ---------------- */
+  const canvas = $("#field");
+  const ctx = canvas.getContext("2d");
+  const system = $("#system");
+  const DESIGN = 562;          // design box: orbit ring 470 + node 92
+  let W = 0, H = 0, DPR = Math.min(2, window.devicePixelRatio || 1);
+  let scanning = false, vacuum = 0, stageK = 1;
+
+  /* the whole orbit is one fixed-size box, scaled to whatever room is left */
+  function fitSystem(){
+    const r = $("#stage").getBoundingClientRect();
+    const k = Math.min(1, (Math.min(r.width, r.height) - 14) / DESIGN);
+    stageK = Math.max(0.44, k);
+    system.style.transform = `scale(${stageK.toFixed(3)})`;
+  }
+
+  function resize(){
+    const r = canvas.getBoundingClientRect();
+    W = r.width; H = r.height;
+    canvas.width = W * DPR; canvas.height = H * DPR;
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    fitSystem();
+  }
+  window.addEventListener("resize", resize);
+
+  const P = [];
+  for (let i = 0; i < 130; i++){
+    P.push({
+      a: Math.random() * Math.PI * 2,
+      r: 150 + Math.random() * 70,
+      s: (Math.random() - 0.5) * 0.006,
+      size: Math.random() * 1.6 + 0.4,
+      hue: Math.random() > 0.55 ? "#57FFC6" : "#A98BFF",
+      o: 0.15 + Math.random() * 0.55
+    });
+  }
+
+  function draw(){
+    if (!W || !H){ requestAnimationFrame(draw); return; }
+    ctx.clearRect(0, 0, W, H);
+    const cx = W / 2, cy = H / 2;
+    const speed = scanning ? 3.4 : 1;
+    const pull = vacuum ? 1 - vacuum * 0.55 : 1;
+
+    for (const p of P){
+      p.a += p.s * speed;
+      const rr = p.r * pull * stageK;
+      const x = cx + Math.cos(p.a) * rr;
+      const y = cy + Math.sin(p.a) * rr * 0.78;
+      ctx.beginPath();
+      ctx.arc(x, y, p.size, 0, Math.PI * 2);
+      ctx.fillStyle = p.hue;
+      ctx.globalAlpha = p.o * (scanning ? 1.25 : 1);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    if (vacuum){
+      vacuum = Math.max(0, vacuum - 0.006);
+      if (vacuum === 0){
+        P.forEach(p => { p.r = 150 + Math.random() * 70; p.a = Math.random() * Math.PI * 2; });
+      }
+    }
+    requestAnimationFrame(draw);
+  }
+
+  /* ---------------- parallax ---------------- */
+  const stage = $("#stage");
+  stage.addEventListener("mousemove", e => {
+    const r = stage.getBoundingClientRect();
+    const dx = (e.clientX - r.left) / r.width - 0.5;
+    const dy = (e.clientY - r.top) / r.height - 0.5;
+    stage.style.transform =
+      `perspective(1200px) rotateY(${dx * 2.4}deg) rotateX(${-dy * 2.0}deg)`;
+  });
+  stage.addEventListener("mouseleave", () => {
+    stage.style.transform = "perspective(1200px) rotateY(0) rotateX(0)";
+  });
+
+  /* ---------------- boot ---------------- */
+  resize();
+  requestAnimationFrame(draw);
+  rotateRing(0);
+  select(0);
+  setProgress(0);
+  setTimeout(() => setProgress(0.18), 400);
+
+  /* анимацию поворота включаем только после первого кадра,
+     иначе подписи «доезжают» до вертикали на старте */
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    const orbit = document.querySelector(".orbit");
+    if (orbit) orbit.classList.add("ready");
+  }));
+})();
+</script>
+</body>
+</html>
