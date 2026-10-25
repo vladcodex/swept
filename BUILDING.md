@@ -81,6 +81,16 @@ that runs the build or the app:
 | `.build\signing\Vladcodex.cer` | public certificate, for inspection |
 | `.build\signing\pfx-password.txt` | password for the `.pfx` |
 
+None of these files are kept in the repository — create them when you need to sign:
+
+```bat
+powershell -NoProfile -ExecutionPolicy Bypass -File .build\make_signing_cert.ps1
+```
+
+The script mints the certificate, exports the two files and then **removes it from the Windows
+certificate store again** (`Cert:\CurrentUser\My` and the `CA` copy Windows makes on its own), so
+afterwards the files are the only copy. Delete the `.pfx` and nothing is left on the machine.
+
 `.build\` is gitignored, so none of this is committed, and none of it is shipped: the installer
 packages `dist\Swept\*` only, and nothing in the app or in `setup.iss` touches a certificate
 store. The signing script loads the key with `EphemeralKeySet`, so it stays in memory for the
