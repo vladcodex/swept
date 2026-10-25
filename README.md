@@ -18,7 +18,8 @@ Free and open source, with a dark interface available in **two languages — Eng
   (24 programs), fetched straight from the vendor's own HTTPS CDN, verified by signature or pinned
   hash, installed silently from an isolated folder.
 - ⚡ **Optimize** — 12 safe Windows tweaks (telemetry, power plan, background apps, Game DVR,
-  widgets…) with a system restore point created before any change.
+  widgets…) with a system restore point created before any change, plus a "why is it slow" audit
+  that names the causes with real numbers and measures the effect of every change.
 - ⏰ **Schedule** — quiet automatic cleanup: daily or weekly at a chosen time, dry run first,
   a restore point before deletion, and an optional Windows Task Scheduler task that runs Swept
   in the background even when the app is closed.
@@ -48,7 +49,7 @@ portable program with five tabs:
 |---|---|
 | **🧹 Cleanup** | Frees disk space: temp files, browser caches, Windows Update cache, Recycle Bin, logs, dumps and game-launcher junk across 15 categories. Always analyzes before deleting. Also checks and cleans the WinSxS component store with the official DISM commands. |
 | **📦 Install** | A curated catalog of 24 popular programs plus 12 Visual C++ Redistributable packages, fetched from the vendors' own CDNs and verified by signature or pinned hash before anything runs. |
-| **⚡ Optimize** | 12 safe Windows tweaks (telemetry, power plan, background apps, Game DVR, debloat) with a system restore point created before any change. |
+| **⚡ Optimize** | 12 safe Windows tweaks (telemetry, power plan, background apps, Game DVR, debloat) with a system restore point created before any change, plus a "why is it slow" audit that names the causes with real numbers and measures the effect. |
 | **⏰ Schedule** | Quiet automatic cleanup: daily or weekly, dry run first, restore point before deletion, optionally driven by a Windows Task Scheduler task that runs Swept headless in the background. |
 | **📋 Log** | The full history of every deleted file and changed setting, with reasons for everything that was skipped. |
 
@@ -172,6 +173,16 @@ Every item states what it changes and whether it needs administrator rights. Whi
 going, the **Progress** panel marks each item live: `⏳` being applied now (with a "3 of 8" counter
 and the item name), `✔` done, `⛔` skipped or unavailable — with the reason written right into the
 row — and `⚠` failed.
+
+**The audit card** above the list measures the machine and answers a different question — not
+"what can I change" but "what slows it down right now": enabled startup programs, free space on
+the system drive, RAM in use, the disk type (SSD or HDD), the active power plan and the Windows
+settings from the list below. Every cause carries a concrete number — *14 startup programs*,
+*12.00 GB free (2%)*, *6 GB of RAM* — so the score can be checked instead of trusted, and a
+single button ticks exactly the tweaks that fix what was found. Nothing is applied silently.
+
+After a run the machine is measured again and the card reports the real effect:
+*was 41 → now 78 (+37)*. That is the difference between a promise and a measurement.
 
 **Restore point** (`🛡`) — before applying anything, Swept creates a Windows system restore point
 (PowerShell `Checkpoint-Computer`), so you can always roll back through *Control Panel → Recovery*.
