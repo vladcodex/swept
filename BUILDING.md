@@ -59,6 +59,43 @@ The result is `dist\Swept-Setup-<version>.exe` — a bilingual (RU/EN) installer
 administrator rights, installs to `Program Files`, offers a desktop shortcut as an optional task
 and ships `README.md` and `LICENSE` next to the program.
 
+Build the portable archive from a *non-portable* `dist\Swept\` plus the marker, so the installed
+copy never ends up in portable mode:
+
+```bat
+mkdir .build\portable_stage
+xcopy /E /I dist\Swept .build\portable_stage\Swept
+echo portable> .build\portable_stage\Swept\swept.portable
+:: then zip the Swept folder itself, so the archive root is Swept\
+```
+
+## Sign the binaries
+
+Both `dist\Swept\Swept.exe` and `dist\Swept-Setup-<version>.exe` carry an Authenticode signature
+with a DigiCert timestamp. The certificate is a **file**, not something installed on the machine
+that runs the build or the app:
+
+| File | Purpose |
+| --- | --- |
+| `.build\signing\Vladcodex.pfx` | private key + certificate (PKCS#12) |
+| `.build\signing\Vladcodex.cer` | public certificate, for inspection |
+| `.build\signing\pfx-password.txt` | password for the `.pfx` |
+
+`.build\` is gitignored, so none of this is committed, and none of it is shipped: the installer
+packages `dist\Swept\*` only, and nothing in the app or in `setup.iss` touches a certificate
+store. The signing script loads the key with `EphemeralKeySet`, so it stays in memory for the
+duration of the run — `Cert:\CurrentUser\*` is never written.
+
+```bat
+powershell -NoProfile -ExecutionPolicy Bypass -File .build\sign.ps1
+```
+
+Sign **after** building and **before** zipping, so the archive contains the signed exe. The
+signature is self-signed (`CN=Vladcodex`), which means the signature verifies as present and
+timestamped but the chain is untrusted: UAC and SmartScreen still say "Unknown publisher". For
+real distribution trust, replace the `.pfx` with a trusted OSS code-signing certificate and point
+`$pfxPath` in `sign.ps1` at it.
+
 ## Command line
 
 The three modules also work on their own — handy for scripts and scheduled tasks.
