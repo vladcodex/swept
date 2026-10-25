@@ -147,6 +147,12 @@ def main() -> int:
     ]
     if os.path.isfile(ICON):
         cmd += ["--icon", ICON]
+    # Папка assets (логотип для иконки окна) — иначе в собранном exe иконка
+    # окна не загрузится: файл лежит только в исходниках. _resource_path()
+    # ищет его в sys._MEIPASS/assets, куда PyInstaller кладёт add-data.
+    assets_dir = os.path.join(BASE, "assets")
+    if os.path.isdir(assets_dir):
+        cmd += ["--add-data", assets_dir + os.pathsep + "assets"]
     if os.path.isfile(version_file):
         cmd += ["--version-file", version_file]
     if not (args.no_admin or args.test):

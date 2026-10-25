@@ -325,6 +325,7 @@ class CleanerApp(ctk.CTk):
         self.vars = {}
         self.browser_opt = {}          # {ключ_браузера: {подопция: BooleanVar}}
         self._browser_opt_frames = {}  # {ключ_браузера: под-панель под-опций}
+        self._browser_opt_rows = {}    # {ключ_браузера: строка (для pack after=)}
         self.scan_results = {}
         # Режим «только сканирование» живёт дольше одного построения панели:
         # модуль очистки создаётся лениво, а флаг нужен и до его открытия.
@@ -556,6 +557,7 @@ class CleanerApp(ctk.CTk):
         self.vars = {}
         self.browser_opt = {}
         self._browser_opt_frames = {}
+        self._browser_opt_rows = {}
         self.opt_vars = {}
         self._info_widgets = {}
         self.pkg_rows = []
@@ -1203,6 +1205,7 @@ class CleanerApp(ctk.CTk):
                     sub.pack(fill="x", padx=(22, 10), pady=(0, 4))
                     sub.pack_forget()  # скрыта, пока не нажмут ⚙
                     self._browser_opt_frames[cat["key"]] = sub
+                    self._browser_opt_rows[cat["key"]] = row
                     self._build_browser_opt_sub(sub, cat["key"])
 
         buttons = ctk.CTkFrame(panel, fg_color="transparent")
@@ -1274,7 +1277,13 @@ class CleanerApp(ctk.CTk):
         if frame.winfo_ismapped():
             frame.pack_forget()
         else:
-            frame.pack(fill="x", padx=(22, 10), pady=(0, 4))
+            # pack(after=...) возвращает панель ровно под её строкой-браузером,
+            # а не в конец списка (pack_forget теряет исходную позицию).
+            anchor = self._browser_opt_rows.get(key)
+            if anchor is not None:
+                frame.pack(fill="x", padx=(22, 10), pady=(0, 4), after=anchor)
+            else:
+                frame.pack(fill="x", padx=(22, 10), pady=(0, 4))
 
     def _build_browser_opt_sub(self, sub, key: str) -> None:
         """Строит вложенную панель раздельных под-опций очистки браузера."""
