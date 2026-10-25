@@ -49,6 +49,7 @@ except ImportError:  # pragma: no cover - подсказка при отсутс
     sys.exit(1)
 
 import cleaner_core as core
+import cleaner_diagnose as diag
 import cleaner_i18n as i18n
 import cleaner_installer as inst
 import cleaner_optimize as opt
@@ -73,6 +74,21 @@ COLOR_ROW_SELECTED = "#1f3b63"   # фон выбранной строки спи
 COLOR_MINT = "#57ffc6"           # акцент орбиты и телеметрии
 COLOR_VIOLET = "#a98bff"         # второй акцент бренда (знак, кольцо, вердикты)
 COLOR_LINE = "#2a2650"           # тонкие обводки панелей
+
+# Цвет вердикта разбора «почему тормозит»: от мятного к красному.
+DIAG_VERDICT_COLORS = {
+    "excellent": COLOR_MINT,
+    "good": COLOR_GREEN,
+    "fair": COLOR_WARN,
+    "bad": COLOR_RED,
+}
+
+# Цвет причины по её важности.
+DIAG_SEVERITY_COLORS = {
+    "high": COLOR_RED,
+    "medium": COLOR_WARN,
+    "low": COLOR_MUTED,
+}
 
 # Ширина боковых рельсов новой оболочки (орбита в центре).
 RAIL_LEFT = 212
@@ -411,6 +427,12 @@ class CleanerApp(ctk.CTk):
         self.installer_available = None  # None/True/False — готовность установщика (права админа)
         self.opt_vars = {}            # чек-боксы вкладки «Оптимизация»
         self.opt_os_label = None      # подпись про версию Windows
+        # Разбор «почему тормозит»: последний отчёт, балл до применения
+        # оптимизаций и флаг «идёт измерение». Отчёт переживает смену языка,
+        # чтобы карточка не пустела при перерисовке интерфейса.
+        self._diag_report = None
+        self._diag_baseline = None
+        self._diag_busy = False
         self._closing = False         # флаг закрытия окна
         self._admin_ok = None         # кэш проверки прав администратора
         self._admin_warned = False    # предупреждение показано только один раз
@@ -936,7 +958,6 @@ class CleanerApp(ctk.CTk):
         self._max_btn = None
         self.opt_os_label = None
         self.opt_live = None
-        self.opt_tip = None
         self.opt_rows = {}
         self._opt_live_visible = False
         # Виджеты блока WinSxS пересоздаются вместе с модулем WinSxS.
@@ -2229,9 +2250,11 @@ class CleanerApp(ctk.CTk):
                       fg_color=COLOR_CARD, hover_color=COLOR_ACCENT,
                       command=lambda: self._set_all_opt(False)).pack(side="left", padx=6)
 
-        # --- Правая панель: управление ---
+        # --- Правая панель: разбор системы и управление ---
         right = ctk.CTkFrame(parent, fg_color=COLOR_CARD_2, corner_radius=10)
         right.grid(row=0, column=1, sticky="nsew", padx=(0, 10), pady=10)
+
+        self._build_diag_card(right)
 
         ctk.CTkLabel(right, text=i18n.t("opt.control"),
                      font=ctk.CTkFont(size=15, weight="bold"),
@@ -2290,10 +2313,206 @@ class CleanerApp(ctk.CTk):
         self.opt_rows = {}
         self._opt_live_visible = False
 
-        self.opt_tip = ctk.CTkLabel(right, text=i18n.t("opt.tip"),
-                                    font=ctk.CTkFont(size=11), text_color=COLOR_MUTED,
-                                    justify="left", anchor="w")
-        self.opt_tip.pack(anchor="w", padx=14, pady=(0, 8))
+        # Отдельного «Совета» про запуск от администратора здесь больше нет:
+        # ровно то же сказано строкой выше (opt.admin_note), а место в панели
+        # нужно карточке разбора — при минимальном размере окна подсказка
+        # обрезалась последней.
+
+        # Первый разбор запускаем сами: пользователь должен увидеть вердикт,
+        # не нажимая ничего. При смене языка отчёт уже есть — его перерисуем
+        # в _build_diag_card, повторно измерять систему не нужно.
+        if self._diag_report is None:
+            self.after(350, self._run_diagnose)
+
+    # --------------------------------------- разбор «почему тормозит»
+    def _build_diag_card(self, parent):
+        """Карточка разбора: балл, вердикт, причины и кнопки.
+
+        Показывает не «найдено 1234 проблемы», а конкретные измерения:
+        сколько программ в автозагрузке, сколько места на диске, сколько
+        занято ОЗУ. Поэтому вердикт можно проверить, а не принять на веру.
+        """
+        card = ctk.CTkFrame(parent, fg_color=COLOR_CARD, corner_radius=10)
+        card.pack(fill="x", padx=14, pady=(12, 4))
+
+        head = ctk.CTkFrame(card, fg_color="transparent")
+        head.pack(fill="x", padx=12, pady=(8, 0))
+        ctk.CTkLabel(head, text=i18n.t("diag.title"),
+                     font=ctk.CTkFont(size=10, weight="bold"),
+                     text_color=COLOR_VIOLET).pack(side="left")
+        self.diag_run_btn = ctk.CTkButton(
+            head, text=i18n.t("diag.run"), width=84, height=24,
+            font=ctk.CTkFont(size=11), fg_color=COLOR_CARD_2,
+            hover_color=COLOR_ACCENT, command=self._run_diagnose)
+        self.diag_run_btn.pack(side="right")
+
+        score_row = ctk.CTkFrame(card, fg_color="transparent")
+        score_row.pack(fill="x", padx=12, pady=(4, 0))
+        self.diag_score = ctk.CTkLabel(score_row, text="—",
+                                       font=ctk.CTkFont(size=26, weight="bold"),
+                                       text_color=COLOR_MUTED)
+        self.diag_score.pack(side="left")
+        self.diag_verdict = ctk.CTkLabel(
+            score_row, text=i18n.t("diag.idle"),
+            font=ctk.CTkFont(size=11), text_color=COLOR_MUTED,
+            justify="left", anchor="w", wraplength=260)
+        self.diag_verdict.pack(side="left", padx=(8, 0), pady=(8, 0))
+
+        self.diag_bar = ctk.CTkProgressBar(card, height=6, corner_radius=3,
+                                           fg_color=COLOR_CARD_2,
+                                           progress_color=COLOR_VIOLET)
+        self.diag_bar.set(0)
+        self.diag_bar.pack(fill="x", padx=12, pady=(6, 6))
+
+        # Список причин пересобирается при каждом замере.
+        self.diag_causes = ctk.CTkFrame(card, fg_color="transparent")
+        self.diag_causes.pack(fill="x", padx=12)
+
+        self.diag_delta = ctk.CTkLabel(card, text="",
+                                       font=ctk.CTkFont(size=11, weight="bold"),
+                                       text_color=COLOR_MINT, anchor="w")
+
+        self.diag_fix_btn = ctk.CTkButton(
+            card, text=i18n.t("diag.fix_none"), height=28,
+            font=ctk.CTkFont(size=11, weight="bold"),
+            fg_color=COLOR_CARD_2, hover_color=COLOR_ACCENT, state="disabled",
+            command=self._apply_diag_fixes)
+        self.diag_fix_btn.pack(fill="x", padx=12, pady=(6, 10))
+
+        if self._diag_report:
+            self._render_diag(self._diag_report)
+
+    def _run_diagnose(self):
+        """Запускает измерение системы в фоне."""
+        if self._diag_busy or getattr(self, "diag_score", None) is None:
+            return
+        self._diag_busy = True
+        try:
+            self.diag_run_btn.configure(state="disabled")
+            self.diag_verdict.configure(text=i18n.t("diag.scanning"),
+                                        text_color=COLOR_MUTED)
+        except Exception:
+            pass
+        threading.Thread(target=self._diagnose_worker, daemon=True).start()
+
+    def _diagnose_worker(self):
+        """Фоновый разбор: Tk не трогает, только кладёт отчёт в очередь."""
+        try:
+            report = diag.diagnose()
+        except Exception as exc:  # noqa: BLE001 - разбор не должен ронять окно
+            report = {"score": 0, "verdict": "bad", "causes": [], "fixes": [],
+                      "metrics": {}, "ok": False, "error": repr(exc)}
+        self.msg_queue.put(("diag_report", report))
+
+    def _render_diag(self, report):
+        """Перерисовывает карточку по готовому отчёту."""
+        if getattr(self, "diag_score", None) is None:
+            return
+        self._diag_busy = False
+        self._diag_report = report
+        try:
+            self.diag_run_btn.configure(state="normal", text=i18n.t("diag.run"))
+        except Exception:
+            pass
+
+        score = int(report.get("score") or 0)
+        verdict = report.get("verdict") or "bad"
+        color = DIAG_VERDICT_COLORS.get(verdict, COLOR_MUTED)
+        self.diag_score.configure(text=str(score), text_color=color)
+        self.diag_verdict.configure(
+            text=i18n.t("diag.verdict_" + verdict), text_color=color)
+        # Полоса едет к баллу плавно — тем же твином, что и полосы рельса.
+        try:
+            self.diag_bar.configure(progress_color=color)
+        except Exception:
+            pass
+        self._tween_bar(self.diag_bar, score / 100.0)
+
+        for child in self.diag_causes.winfo_children():
+            child.destroy()
+        causes = report.get("causes") or []
+        if not causes:
+            ctk.CTkLabel(self.diag_causes, text=i18n.t("diag.no_causes"),
+                         font=ctk.CTkFont(size=11),
+                         text_color=COLOR_MINT).pack(anchor="w")
+        else:
+            # Больше четырёх строк карточка не читается — остальное считаем.
+            for cause in causes[:4]:
+                row = ctk.CTkFrame(self.diag_causes, fg_color="transparent")
+                row.pack(fill="x", pady=1)
+                ctk.CTkLabel(
+                    row, text="•", width=10, font=ctk.CTkFont(size=12),
+                    text_color=DIAG_SEVERITY_COLORS.get(
+                        cause.get("severity"), COLOR_MUTED)
+                ).pack(side="left", anchor="n")
+                ctk.CTkLabel(
+                    row, text=self._diag_cause_text(cause), anchor="w",
+                    justify="left", wraplength=290,
+                    font=ctk.CTkFont(size=11),
+                    text_color=COLOR_TEXT if cause.get("severity") != "low"
+                    else COLOR_MUTED
+                ).pack(side="left", fill="x", expand=True)
+            if len(causes) > 4:
+                ctk.CTkLabel(self.diag_causes,
+                             text=i18n.t("diag.more", n=len(causes) - 4),
+                             font=ctk.CTkFont(size=11),
+                             text_color=COLOR_MUTED).pack(anchor="w", padx=(16, 0))
+
+        fixes = report.get("fixes") or []
+        if fixes:
+            self.diag_fix_btn.configure(text=i18n.t("diag.fix", n=len(fixes)),
+                                        state="normal")
+        else:
+            self.diag_fix_btn.configure(text=i18n.t("diag.fix_none"),
+                                        state="disabled")
+
+        # «Было → стало» показываем только если балл реально изменился
+        # после применения оптимизаций.
+        baseline = self._diag_baseline
+        if baseline is not None and score != baseline:
+            diff = score - baseline
+            self.diag_delta.configure(
+                text=i18n.t("diag.delta", old=baseline, new=score,
+                            sign="+" if diff > 0 else "−", diff=abs(diff)),
+                # Рост — мятный, падение — предупреждающий: цвет должен
+                # совпадать со знаком, а не быть всегда «хорошим».
+                text_color=COLOR_MINT if diff > 0 else COLOR_WARN)
+            if not self.diag_delta.winfo_ismapped():
+                self.diag_delta.pack(fill="x", padx=12, pady=(0, 2),
+                                     before=self.diag_fix_btn)
+
+    def _diag_cause_text(self, cause) -> str:
+        """Текст причины на текущем языке с подставленными измерениями."""
+        key = cause.get("key") or ""
+        value = dict(cause.get("value") or {})
+        if key == "disk_low":
+            value["free"] = core.format_bytes(int(value.get("free") or 0))
+            value["pct"] = int(round(float(value.get("pct") or 0)))
+        elif key == "ram_full":
+            value["pct"] = int(value.get("pct") or 0)
+        elif key == "power":
+            plan = value.get("plan") or "other"
+            value["plan"] = i18n.t("diag.plan_" + plan)
+        return i18n.t("diag.cause_" + key, **value)
+
+    def _apply_diag_fixes(self):
+        """Отмечает галочки тех оптимизаций, которые закрывают причины.
+
+        Ничего не применяет: пользователь видит список, проверяет его и сам
+        нажимает «Применить выбранное» — как и с любым другим пунктом.
+        """
+        fixes = diag.fix_keys(self._diag_report or {})
+        marked = 0
+        for key in fixes:
+            var = self.opt_vars.get(key)
+            if var is not None and not var.get():
+                var.set(True)
+                marked += 1
+        if marked:
+            self.opt_status.configure(text=i18n.t("diag.marked", n=marked))
+        else:
+            self.opt_status.configure(text=i18n.t("diag.already"))
+        self._append_log(i18n.t("log.diag_marked", marked))
 
     # ------------------------------------------- живой список оптимизации
     def _opt_live_show(self, keys):
@@ -2319,8 +2538,7 @@ class CleanerApp(ctk.CTk):
             self.opt_rows[key] = {"row": row, "icon": icon, "text": text,
                                   "title": title}
         if not self._opt_live_visible:
-            self.opt_live.pack(fill="both", expand=True, padx=14, pady=(0, 8),
-                               before=self.opt_tip)
+            self.opt_live.pack(fill="both", expand=True, padx=14, pady=(0, 8))
             self._opt_live_visible = True
 
     def _opt_live_start(self, key, index, total):
@@ -2674,8 +2892,21 @@ class CleanerApp(ctk.CTk):
             self.status_label.configure(text=i18n.t("status.opt_done"))
             self.opt_status.configure(text=i18n.t("status.done"))
             self._opt_live_finish()
+            # Запоминаем балл до правок и меряем заново: карточка покажет
+            # «было → стало», то есть реальный эффект, а не обещание.
+            if getattr(self, "_diag_report", None):
+                self._diag_baseline = int(self._diag_report.get("score") or 0)
+                self.after(200, self._run_diagnose)
             if msg[1]:
                 messagebox.showinfo(i18n.t("dlg.optimization"), msg[1])
+        elif kind == "diag_report":
+            report = msg[1] or {}
+            self._render_diag(report)
+            # Разбор пишем в журнал: это след, по которому видно, что
+            # программа нашла и с каким баллом.
+            self._append_log(i18n.t("log.diag_report",
+                                    report.get("score", 0),
+                                    len(report.get("causes") or [])))
         elif kind == "restore_point_done":
             self._set_running(False)
             self.status_label.configure(text=i18n.t("status.restore_done"))

@@ -281,8 +281,6 @@ STRINGS = {
         "opt.os": "ОС: {} (build {}) | редакция: {}",
         "opt.admin_note": "Пункты с пометкой «админ» требуют прав администратора.\n"
                           "Без админа они будут безопасно пропущены.",
-        "opt.tip": "Совет: для полной оптимизации запустите\n"
-                   "программу от имени администратора.",
         "btn.apply": "⚙  Применить выбранное",
         "btn.restore_point": "🛡  Точка восстановления",
         "btn.mark_safe": "Отметить безопасные",
@@ -293,6 +291,38 @@ STRINGS = {
         "opt.restore_skip": "Точка восстановления не создана: {}",
         "opt.restore_skip_no_admin": "Без прав администратора точку восстановления создать нельзя — пропускаем.",
         "opt.restore_fail": "Не удалось создать точку восстановления",
+
+        # --------------------------------------------- разбор «почему тормозит»
+        "diag.title": "РАЗБОР: ПОЧЕМУ ТОРМОЗИТ",
+        "diag.run": "Разобрать",
+        "diag.scanning": "Измеряю систему…",
+        "diag.idle": "Измерю систему и покажу, что именно её замедляет.",
+        "diag.verdict_excellent": "Отлично — всё в порядке",
+        "diag.verdict_good": "Хорошо, есть мелочи",
+        "diag.verdict_fair": "Есть что поправить",
+        "diag.verdict_bad": "Сильно тормозит",
+        "diag.no_causes": "Причин не найдено",
+        "diag.more": "и ещё {n}…",
+        "diag.fix": "Отметить исправления ({n})",
+        "diag.fix_none": "Исправлять нечего",
+        "diag.already": "Всё найденное уже отмечено — проверьте список.",
+        "diag.marked": "Отмечено пунктов: {n} — проверьте список и нажмите "
+                       "«Применить выбранное».",
+        "diag.delta": "Было {old} → стало {new} ({sign}{diff})",
+        "diag.cause_startup_many": "Автозагрузка: {n} программ",
+        "diag.cause_disk_low": "Диск {drive} — свободно {free} ({pct}%)",
+        "diag.cause_disk_hdd": "Системный диск — HDD",
+        "diag.cause_ram_low": "ОЗУ всего {gb} ГБ",
+        "diag.cause_ram_full": "ОЗУ занята на {pct}%",
+        "diag.cause_telemetry": "Телеметрия и диагностика работают",
+        "diag.cause_gamedvr": "Game DVR пишет в фоне",
+        "diag.cause_background": "Фоновые приложения разрешены",
+        "diag.cause_power": "Схема питания: {plan}",
+        "diag.cause_visualfx": "Визуальные эффекты на максимум",
+        "diag.plan_high": "высокая производительность",
+        "diag.plan_balanced": "сбалансированная",
+        "diag.plan_saver": "экономия энергии",
+        "diag.plan_other": "своя",
 
         # ---------------------------------------------------------- журнал
         "log.title": "📋  Журнал операций",
@@ -420,6 +450,8 @@ STRINGS = {
                           "  Недоступно в этой сборке Windows: {}\n"
                           "  Ошибки: {}",
         "log.opt_detail": "  • {} — {}",
+        "log.diag_marked": "  ✔ разбор: отмечено пунктов — {}",
+        "log.diag_report": "  • разбор системы: {}/100 — причин: {}",
         "log.restore_ok": "  ✔ точка восстановления системы создана",
         "log.restore_fail": "  ⚠ не удалось создать точку восстановления: {}",
         "log.restore_no_admin": "  ⚠ нужны права администратора — точка восстановления не создана",
@@ -712,8 +744,6 @@ STRINGS = {
         "opt.os": "OS: {} (build {}) | edition: {}",
         "opt.admin_note": "Items marked “admin” require administrator rights.\n"
                           "Without them they are skipped safely.",
-        "opt.tip": "Tip: for full optimization run the program\n"
-                   "as administrator.",
         "btn.apply": "⚙  Apply selected",
         "btn.restore_point": "🛡  Restore point",
         "btn.mark_safe": "Mark safe defaults",
@@ -724,6 +754,38 @@ STRINGS = {
         "opt.restore_skip": "Restore point not created: {}",
         "opt.restore_skip_no_admin": "Without administrator rights a restore point cannot be created — skipping.",
         "opt.restore_fail": "Failed to create a restore point",
+
+        # ------------------------------------------------ "why it's slow" audit
+        "diag.title": "AUDIT: WHY IT'S SLOW",
+        "diag.run": "Analyse",
+        "diag.scanning": "Measuring the system…",
+        "diag.idle": "I'll measure the system and show what slows it down.",
+        "diag.verdict_excellent": "Excellent — nothing to fix",
+        "diag.verdict_good": "Good, minor things only",
+        "diag.verdict_fair": "Worth fixing",
+        "diag.verdict_bad": "Seriously slow",
+        "diag.no_causes": "No causes found",
+        "diag.more": "and {n} more…",
+        "diag.fix": "Tick fixes ({n})",
+        "diag.fix_none": "Nothing to fix",
+        "diag.already": "Everything found is already ticked — check the list.",
+        "diag.marked": "Ticked {n} item(s) — review the list and press "
+                       "\"Apply selected\".",
+        "diag.delta": "Was {old} → now {new} ({sign}{diff})",
+        "diag.cause_startup_many": "Startup: {n} programs",
+        "diag.cause_disk_low": "Drive {drive} — {free} free ({pct}%)",
+        "diag.cause_disk_hdd": "System drive is an HDD",
+        "diag.cause_ram_low": "Only {gb} GB of RAM",
+        "diag.cause_ram_full": "RAM is {pct}% full",
+        "diag.cause_telemetry": "Telemetry and diagnostics are running",
+        "diag.cause_gamedvr": "Game DVR records in the background",
+        "diag.cause_background": "Background apps are allowed",
+        "diag.cause_power": "Power plan: {plan}",
+        "diag.cause_visualfx": "Visual effects are maxed out",
+        "diag.plan_high": "high performance",
+        "diag.plan_balanced": "balanced",
+        "diag.plan_saver": "power saver",
+        "diag.plan_other": "custom",
 
         # ---------------------------------------------------------- журнал
         "log.title": "📋  Operations log",
@@ -852,6 +914,8 @@ STRINGS = {
                           "  Unavailable on this Windows build: {}\n"
                           "  Errors: {}",
         "log.opt_detail": "  • {} — {}",
+        "log.diag_marked": "  ✔ audit: items ticked — {}",
+        "log.diag_report": "  • system audit: {}/100 — causes: {}",
         "log.restore_ok": "  ✔ system restore point created",
         "log.restore_fail": "  ⚠ failed to create restore point: {}",
         "log.restore_no_admin": "  ⚠ administrator rights required — restore point not created",
