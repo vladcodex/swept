@@ -369,6 +369,11 @@ class CleanerApp(ctk.CTk):
         self._node_hits = []          # (x, y, r, index) для кликов по орбите
         self._orbit_progress = 0.0    # дуга прогресса вокруг ядра
         self._core_scheduled = False  # перерисовка центра уже запланирована
+        self._hover_node = None       # узел орбиты под курсором (для подсветки)
+        # Плавный прогресс: цель и текущее (анимированное) значение.
+        self._progress_target = 0.0
+        self._progress_shown = 0.0
+        self._progress_anim_running = False
         self._feed_lines = deque(maxlen=7)   # короткая лента в правом рельсе
         self._feed_scheduled = False
         self._rail = {}
@@ -737,7 +742,7 @@ class CleanerApp(ctk.CTk):
             usage = shutil.disk_usage(drive)
             share = usage.used / usage.total if usage.total else 0.0
             rail["disk"]["value"].configure(text="{}%".format(int(round(share * 100))))
-            rail["disk"]["bar"].set(share)
+            self._tween_bar(rail["disk"]["bar"], share)
         except Exception:
             pass
 
@@ -751,10 +756,10 @@ class CleanerApp(ctk.CTk):
         for name, size in (("temp", temp_size), ("bin", bin_size)):
             if size:
                 rail[name]["value"].configure(text=core.format_bytes(size))
-                rail[name]["bar"].set(min(1.0, size / float(1024 ** 3)))
+                self._tween_bar(rail[name]["bar"], min(1.0, size / float(1024 ** 3)))
             else:
                 rail[name]["value"].configure(text=core.format_bytes(0))
-                rail[name]["bar"].set(0)
+                self._tween_bar(rail[name]["bar"], 0)
 
         rail["categories"].configure(text=str(len(core.CATEGORIES)))
         rail["files"].configure(text="{:,}".format(files).replace(",", " "))
@@ -833,6 +838,9 @@ class CleanerApp(ctk.CTk):
         # и рисовать на каждое — лишняя работа.
         self.orbit_canvas.bind("<Configure>", lambda _e: self._schedule_core_redraw())
         self.orbit_canvas.bind("<Button-1>", self._on_orbit_click)
+        # Подсветка узла под курсором (плавная, через тот же планировщик).
+        self.orbit_canvas.bind("<Motion>", self._on_orbit_motion)
+        self.orbit_canvas.bind("<Leave>", lambda _e: self._set_hover_node(None))
 
         self.module_host = ctk.CTkFrame(self.stage, fg_color="transparent")
         self.module_host.grid(row=0, column=0, sticky="nsew")
@@ -886,6 +894,7 @@ class CleanerApp(ctk.CTk):
             if k == index:
                 frame.grid()
                 frame.tkraise()
+                self._animate_module_in(frame, index)
             else:
                 frame.grid_remove()
         try:
@@ -910,6 +919,45 @@ class CleanerApp(ctk.CTk):
             pass
         self._update_ribbon()
         self._draw_orbit()
+
+    def _animate_module_in(self, frame, index):
+        """Короткий «въезд» панели снизу при открытии модуля (~110 мс).
+
+        Анимируется только внешний отступ панели в сетке — это дешевле, чем
+        пересобирать содержимое. Важно: grid_configure на скрытой панели снова
+        её показывает, поэтому кадр прерывается, если модуль уже не текущий.
+        """
+        if self._closing:
+            return
+        try:
+            frame.grid_configure(pady=(16, 0))
+        except Exception:
+            return
+        steps = 5
+        state = {"i": 0}
+
+        def step():
+            if self._closing or self._current_module != index:
+                return
+            try:
+                if not frame.winfo_exists():
+                    return
+            except Exception:
+                return
+            state["i"] += 1
+            frac = state["i"] / float(steps)
+            offset = int(round(16 * (1 - frac)))
+            try:
+                frame.grid_configure(pady=(offset, 0))
+            except Exception:
+                return
+            if state["i"] < steps:
+                try:
+                    self.after(22, step)
+                except Exception:
+                    pass
+
+        self.after(22, step)
 
     def _update_ribbon(self):
         if self._current_module is None:
@@ -990,15 +1038,25 @@ class CleanerApp(ctk.CTk):
             x = cx + radius * math.cos(angle)
             y = cy + radius * math.sin(angle)
             selected = (i == self._current_module)
-            canvas.create_oval(x - node_r, y - node_r, x + node_r, y + node_r,
-                               fill=COLOR_ACCENT if selected else COLOR_CARD,
-                               outline=COLOR_ACCENT if selected else COLOR_LINE,
-                               width=2 if selected else 1)
-            self._draw_node_icon(canvas, key, x, y,
-                                 COLOR_BG if selected else COLOR_MUTED)
-            canvas.create_text(x, y + node_r + 12, text=i18n.t("mod." + key),
-                               fill=COLOR_MINT if selected else COLOR_MUTED,
-                               font=("Segoe UI", 9))
+            hovered = (i == self._hover_node)
+            # Лёгкое «раздувание» узла под курсором — живой отклик без лишних
+            # кадров (перерисовка идёт через планировщик).
+            r = node_r * (1.09 if hovered else 1.0)
+            if selected:
+                fill, outline, width = COLOR_ACCENT, COLOR_ACCENT, 2
+            elif hovered:
+                fill, outline, width = COLOR_CARD_2, COLOR_MINT, 2
+            else:
+                fill, outline, width = COLOR_CARD, COLOR_LINE, 1
+            canvas.create_oval(x - r, y - r, x + r, y + r,
+                               fill=fill, outline=outline, width=width)
+            icon_color = (COLOR_BG if selected
+                          else (COLOR_MINT if hovered else COLOR_MUTED))
+            self._draw_node_icon(canvas, key, x, y, icon_color)
+            label_color = COLOR_MINT if (selected or hovered) else COLOR_MUTED
+            canvas.create_text(x, y + r + 12, text=i18n.t("mod." + key),
+                               fill=label_color, font=("Segoe UI", 9))
+            # Хит-зона — по базовому радиусу (стабильная, без «залипания»).
             self._node_hits.append((x, y, node_r, i))
 
     def _draw_node_icon(self, canvas, key: str, x: float, y: float, color: str):
@@ -1041,6 +1099,26 @@ class CleanerApp(ctk.CTk):
                 self._select_module(index)
                 return
 
+    def _on_orbit_motion(self, event):
+        """Запоминает узел под курсором — он подсвечивается при перерисовке."""
+        index = None
+        for x, y, radius, i in self._node_hits:
+            if (event.x - x) ** 2 + (event.y - y) ** 2 <= (radius + 6) ** 2:
+                index = i
+                break
+        self._set_hover_node(index)
+
+    def _set_hover_node(self, index):
+        """Меняет подсвеченный узел и просит перерисовать орбиту."""
+        if index == self._hover_node:
+            return
+        self._hover_node = index
+        try:
+            self.orbit_canvas.configure(cursor="hand2" if index is not None else "")
+        except Exception:
+            pass
+        self._schedule_core_redraw()
+
     def _refresh_core(self):
         """Перерисовывает центр сцены по текущему прогрессу."""
         bar = getattr(self, "progress", None)
@@ -1052,19 +1130,89 @@ class CleanerApp(ctk.CTk):
         self._draw_orbit()
 
     def _set_progress(self, value: float):
-        """Ставит прогресс и обновляет дугу. Полосы может ещё не быть —
-        модуль очистки строится лениво, а плановая очистка идёт и без него."""
+        """Ставит ЦЕЛЬ прогресса; полоса и дуга плавно «догоняют» её.
+
+        Полосы может ещё не быть — модуль очистки строится лениво, а плановая
+        очистка идёт и без него; тогда анимируется только дуга орбиты.
+        """
         try:
-            self._orbit_progress = max(0.0, min(1.0, float(value)))
+            self._progress_target = max(0.0, min(1.0, float(value)))
         except (TypeError, ValueError):
-            self._orbit_progress = 0.0
+            self._progress_target = 0.0
+        if not self._progress_anim_running:
+            self._progress_anim_running = True
+            self.after(16, self._animate_progress)
+
+    def _animate_progress(self):
+        """Один кадр плавного прогресса (экспоненциальное приближение)."""
+        if self._closing:
+            self._progress_anim_running = False
+            return
+        diff = self._progress_target - self._progress_shown
+        if abs(diff) < 0.002:
+            self._progress_shown = self._progress_target
+            self._apply_progress_visuals()
+            self._progress_anim_running = False
+            return
+        # Быстро в начале, мягко в конце — без рывков при потоке сообщений
+        # о прогрессе (они приходят до 20 раз в секунду).
+        self._progress_shown += diff * 0.22
+        self._apply_progress_visuals()
+        try:
+            self.after(16, self._animate_progress)
+        except Exception:
+            self._progress_anim_running = False
+
+    def _apply_progress_visuals(self):
+        """Переносит анимированное значение в полосу и в дугу орбиты."""
+        self._orbit_progress = self._progress_shown
         bar = getattr(self, "progress", None)
         if bar is not None:
             try:
-                bar.set(self._orbit_progress)
+                bar.set(self._progress_shown)
             except Exception:
                 pass
         self._schedule_core_redraw()
+
+    def _tween_bar(self, bar, target, duration: int = 260):
+        """Плавно доводит полосу до target (ease-out), без наложения твинов.
+
+        Нужна для полос левого рельса и «крупнейших категорий»: мгновенный
+        скачок выглядит дёшево, а плавное заполнение читается как отклик.
+        """
+        try:
+            start = float(bar.get())
+        except Exception:
+            start = 0.0
+        target = max(0.0, min(1.0, float(target)))
+        gen = getattr(bar, "_swept_tween", 0) + 1
+        bar._swept_tween = gen
+        if abs(target - start) < 0.004:
+            try:
+                bar.set(target)
+            except Exception:
+                pass
+            return
+        frames = max(1, int(duration / 16.0))
+        state = {"i": 0}
+
+        def step():
+            if self._closing or getattr(bar, "_swept_tween", 0) != gen:
+                return
+            state["i"] += 1
+            t = state["i"] / float(frames)
+            eased = 1 - (1 - t) ** 3
+            try:
+                bar.set(start + (target - start) * eased)
+            except Exception:
+                return
+            if state["i"] < frames:
+                try:
+                    self.after(16, step)
+                except Exception:
+                    pass
+
+        self.after(16, step)
 
     def _schedule_core_redraw(self):
         """Перерисовывает центр не чаще ~16 раз в секунду.
@@ -1076,7 +1224,10 @@ class CleanerApp(ctk.CTk):
         if self._core_scheduled:
             return
         self._core_scheduled = True
-        self.after(60, self._flush_core_redraw)
+        try:
+            self.after(60, self._flush_core_redraw)
+        except Exception:
+            self._core_scheduled = False
 
     def _flush_core_redraw(self):
         self._core_scheduled = False
@@ -2058,7 +2209,7 @@ class CleanerApp(ctk.CTk):
                 title = cut.rstrip(" ,;·—(") + "…"
             row["title"].configure(text=title)
             row["value"].configure(text=core.format_bytes(size))
-            row["bar"].set(min(1.0, size / float(heaviest)))
+            self._tween_bar(row["bar"], min(1.0, size / float(heaviest)))
             row["frame"].pack(fill="x", pady=(0, 6))
 
     # ================================================== ОБРАБОТКА ОЧЕРЕДИ
@@ -2104,6 +2255,13 @@ class CleanerApp(ctk.CTk):
             self._set_progress(0)
         elif kind == "category":
             self._update_category_info(msg[1], msg[2])
+        elif kind == "results_update":
+            # Воркер прислал новые результаты скана — вливаем в главном потоке.
+            self.scan_results.update(msg[1])
+        elif kind == "results_clear":
+            # После реальной очистки сбрасываем устаревшие результаты.
+            for key in msg[1]:
+                self.scan_results.pop(key, None)
         elif kind == "freed_delta":
             # Накопление реально освобождённого места за сессию.
             self.total_freed += msg[1]
@@ -2118,7 +2276,7 @@ class CleanerApp(ctk.CTk):
             self.status_label.configure(text=msg[1])
             if msg[2]:
                 messagebox.showinfo(i18n.t("dlg.ok"), msg[2])
-        elif kind == "installer_status":
+        elif kind == "installer_available":
             self.installer_available = bool(msg[1])
             self._refresh_installer_label()
         elif kind == "installer_log":
@@ -2130,7 +2288,7 @@ class CleanerApp(ctk.CTk):
                 self.install_status.configure(text=line[:150])
         elif kind == "installer_status":
             if self._module_built(1):
-                self.install_status.configure(text=msg[1][:150])
+                self.install_status.configure(text=(msg[1] or "")[:150])
         elif kind == "installer_results":
             self._show_installer_results(msg[1])
         elif kind == "installer_done":
@@ -2190,6 +2348,9 @@ class CleanerApp(ctk.CTk):
         elif kind == "winsxs_done":
             self._set_winsxs_busy(False)
             self._set_running(False)
+        elif kind == "sched_trigger":
+            # Планировщик (фоновый поток) просит запустить очистку.
+            self._run_scheduled_clean()
         elif kind == "sched_running":
             # Тихая плановая очистка: как _set_running, но БЕЗ всплывающих окон.
             self._set_running(msg[1])
@@ -2203,7 +2364,7 @@ class CleanerApp(ctk.CTk):
             available = inst.is_installer_available()
         except Exception:
             available = False
-        self.msg_queue.put(("installer_status", available))
+        self.msg_queue.put(("installer_available", available))
 
     def _refresh_installer_label(self):
         """Показывает статус установщика на текущем языке (None — ещё проверяется)."""
@@ -2748,7 +2909,10 @@ class CleanerApp(ctk.CTk):
                                                stop_event=self.stop_event,
                                                selected_map=selected_map)
                 results.update(scanned)
-                self.scan_results.update(scanned)
+                # Общий словарь обновляем В ГЛАВНОМ ПОТОКЕ через очередь:
+                # воркер не должен мутировать scan_results, пока UI его читает
+                # (иначе «dictionary changed size during iteration»).
+                self.msg_queue.put(("results_update", scanned))
                 for key, res in results.items():
                     self.msg_queue.put(("category", key,
                                         "{} | {}".format(core.format_bytes(res["total_size"]),
@@ -2792,9 +2956,10 @@ class CleanerApp(ctk.CTk):
                 # файлов, которых уже нет, и покажет «освобождено 0 Б».
                 if not self.stop_event.is_set():
                     for key in list(results.keys()):
-                        self.scan_results.pop(key, None)
                         self.msg_queue.put(("category", key, "{} | 0".format(
                             core.format_bytes(0))))
+                    # Сброс устаревших результатов — тоже в главном потоке.
+                    self.msg_queue.put(("results_clear", list(results.keys())))
             result_text = i18n.t(
                 "log.clean_result",
                 i18n.t("log.sim_done") if dry_run else i18n.t("log.clean_done"),
@@ -3479,19 +3644,44 @@ class CleanerApp(ctk.CTk):
                 continue
             # Время пришло — запускаем, если ничего другого не выполняется.
             if not self.running and self._schedule_enabled():
-                self._run_scheduled_clean()
+                # Из фонового потока НЕ трогаем Tk: просим главный поток
+                # запустить очистку (он прочитает галочки и стартует воркер).
+                self.msg_queue.put(("sched_trigger",))
 
     def _run_scheduled_clean(self):
-        """Запускает тихую очистку (кнопка «Запустить сейчас» или планировщик)."""
+        """Запускает тихую очистку (кнопка «Запустить сейчас» или планировщик).
+
+        Всегда вызывается в ГЛАВНОМ потоке: галочки Tk читаем здесь и передаём
+        в воркер значениями — фоновый поток не должен обращаться к Tk.
+        """
         if self.running:
             self._log(i18n.t("sched.busy"))
             return
+        s = settings.get_settings()
+        if self.sched_vars:
+            keys = [k for k, v in self.sched_vars.items() if v.get()]
+        else:
+            # Вкладка «Расписание» ещё не открывалась — берём сохранённый выбор.
+            saved = s.get("Schedule.Categories", "") or ""
+            keys = [k for k in saved.split(",") if k] or [c["key"] for c in core.CATEGORIES]
+        if self.sched_restore_var is not None:
+            make_restore = bool(self.sched_restore_var.get())
+        else:
+            make_restore = s.get("Schedule.Restore", "1") == "1"
+        if self.sched_dry_var is not None:
+            dry = bool(self.sched_dry_var.get())
+        else:
+            dry = s.get("Schedule.Dry", "0") == "1"
         thread = threading.Thread(target=self._scheduled_clean_worker,
-                                  daemon=True)
+                                  args=(keys, make_restore, dry), daemon=True)
         thread.start()
 
-    def _scheduled_clean_worker(self):
-        """Фоновый воркер тихой очистки: точка восстановления + очистка."""
+    def _scheduled_clean_worker(self, keys, make_restore, dry):
+        """Фоновый воркер тихой очистки: точка восстановления + очистка.
+
+        keys/make_restore/dry переданы значениями из главного потока —
+        к Tk-переменным отсюда не обращаемся.
+        """
         def log(text):
             self.msg_queue.put(("log", text))
         def status(text):
@@ -3502,11 +3692,10 @@ class CleanerApp(ctk.CTk):
             self.msg_queue.put(("sched_running", True))
             log("")
             log(i18n.t("sched.header"))
-            keys = [k for k, v in self.sched_vars.items() if v.get()]
             run_scheduled_cleanup(
                 keys,
-                make_restore=self.sched_restore_var.get(),
-                dry_run_first=self.sched_dry_var.get(),
+                make_restore=make_restore,
+                dry_run_first=dry,
                 on_log=log, on_status=status, on_progress=on_progress,
                 stop_event=self.stop_event)
             log(i18n.t("sched.finished"))
