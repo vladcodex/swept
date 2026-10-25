@@ -78,6 +78,13 @@ COLOR_LINE = "#2a2650"           # тонкие обводки панелей
 RAIL_LEFT = 212
 RAIL_RIGHT = 252
 
+# Минимальный размер окна — по фактической вёрстке: два рельса (212 + 252)
+# и колонки модуля очистки (380 + 330). Нужен и для изменения размера за
+# край окна (см. _resize_to): спросить minsize() у CustomTkinter нельзя —
+# его метод принимает только аргументы и не умеет возвращать значение.
+MIN_WIDTH = 1260
+MIN_HEIGHT = 700
+
 # Порядок узлов на орбите: совпадает с порядком панелей модулей.
 MODULE_KEYS = ("clean", "install", "optimize", "schedule", "log", "winsxs")
 
@@ -125,6 +132,55 @@ def _resource_path(name: str) -> str | None:
         if os.path.isfile(path):
             return path
     return None
+
+
+# =============================================================================
+# ОКНО БЕЗ СИСТЕМНОГО ЗАГОЛОВКА
+# =============================================================================
+# Ширина полосы у края окна, за которую тянется размер (px). У окна без рамки
+# системных граней нет, поэтому край ловится вручную.
+EDGE_GRIP = 6
+
+# Курсор Windows для каждой грани и каждого угла окна.
+EDGE_CURSORS = {
+    "n": "size_ns", "s": "size_ns",
+    "w": "size_we", "e": "size_we",
+    "nw": "size_nw_se", "se": "size_nw_se",
+    "ne": "size_ne_sw", "sw": "size_ne_sw",
+}
+
+
+def _work_area() -> tuple[int, int, int, int] | None:
+    """Рабочая область основного экрана без панели задач.
+
+    Нужна для разворота окна: разворачивать на весь экран нельзя — окно
+    заехало бы под панель задач. Если Win32 недоступен, возвращаем None,
+    и вызывающий код берёт размеры экрана целиком.
+    """
+    try:
+        import ctypes
+        from ctypes import wintypes
+        rect = wintypes.RECT()
+        spi_getworkarea = 0x0030
+        if ctypes.windll.user32.SystemParametersInfoW(
+                spi_getworkarea, 0, ctypes.byref(rect), 0):
+            width = rect.right - rect.left
+            height = rect.bottom - rect.top
+            if width > 200 and height > 200:
+                return rect.left, rect.top, width, height
+    except Exception:
+        pass
+    return None
+
+
+def _window_hwnd(window) -> int:
+    """HWND верхнего уровня окна Tk (0, если получить не удалось)."""
+    try:
+        import ctypes
+        hwnd = ctypes.windll.user32.GetParent(window.winfo_id())
+        return int(hwnd or window.winfo_id())
+    except Exception:
+        return 0
 
 
 # Окно выбора набора: сколько строк списка показываем до появления прокрутки,
@@ -317,9 +373,20 @@ class CleanerApp(ctk.CTk):
         self.geometry("1360x820")
         # Минимальная ширина — по фактической вёрстке: два рельса (212 + 252)
         # и колонки модуля очистки (380 + 330). При 1180 правый рельс обрезался.
-        self.minsize(1260, 700)
+        self.minsize(MIN_WIDTH, MIN_HEIGHT)
         self.configure(fg_color=COLOR_BG)
         self._apply_window_icon()
+
+        # --- Обрамление окна (своя шапка вместо системного заголовка) ---
+        self._frameless = True        # системный заголовок отключён
+        self._maximized = False       # окно развёрнуто на рабочий стол
+        self._restore_geom = None     # геометрия до разворота
+        self._drag_offset = None      # смещение курсора при перетаскивании
+        self._resize_edge = None      # активная грань при изменении размера
+        self._resize_start = None     # геометрия на момент начала тяги за край
+        self._frame_cursor = ""       # текущий курсор края окна
+        self._max_btn = None          # кнопка «развернуть/восстановить»
+        self._setup_frameless()
 
         # --- Состояние ---
         self.vars = {}
@@ -398,6 +465,7 @@ class CleanerApp(ctk.CTk):
 
         # --- Построение интерфейса ---
         self._build_shell()
+        self._center_window()
 
         self.after(100, self._poll_queue)
         self.after(300, self._check_admin_warning)
@@ -419,39 +487,317 @@ class CleanerApp(ctk.CTk):
         (``_resource_path``). Иконка — украшение; при её отсутствии просто
         ничего не делаем, запуск от этого не зависит.
         """
+        # 1) .ico — самый надёжный путь для заголовка и панели задач Windows.
+        ico = _resource_path("app.ico")
+        if ico:
+            try:
+                self.iconbitmap(ico)
+            except Exception:
+                pass
+        # 2) PNG-логотип через iconphoto. Ссылку на PhotoImage ОБЯЗАТЕЛЬНО
+        # храним в атрибуте: иначе Python соберёт объект сборщиком мусора,
+        # Tcl-образ исчезнет и Windows вернёт стандартную иконку Tk (синий
+        # «лист») — именно это и было видно в заголовке окна.
         path = _resource_path(os.path.join("assets", "swept-logo.png"))
         if not path:
             return
         try:
-            self.iconphoto(True, tk.PhotoImage(file=path))
+            self._window_icon = tk.PhotoImage(file=path)
+            self.iconphoto(True, self._window_icon)
+        except Exception:
+            pass
+
+    # ==================================================== РАМКА ОКНА
+    def _setup_frameless(self) -> None:
+        """Убирает системный заголовок и включает свою шапку.
+
+        У окна без рамки нет ни заголовка, ни граней, поэтому всё, что
+        Windows делала сама, берём на себя: перетаскивание за шапку, кнопки
+        свернуть/развернуть/закрыть (см. ``_build_header``) и изменение
+        размера за край окна.
+        """
+        if not self._frameless:
+            return
+        try:
+            self.overrideredirect(True)
+        except tk.TclError:
+            # Окно уже отображено и сменить режим нельзя — остаёмся с
+            # системным заголовком: интерфейс от этого не ломается.
+            self._frameless = False
+            return
+        self._apply_taskbar_style()
+        # Движение мыши ловим на всём окне: дочерние виджеты наследуют
+        # bindtag окна, поэтому обработчик видит и края, и содержимое.
+        self.bind("<Motion>", self._on_frame_motion, add="+")
+        self.bind("<ButtonPress-1>", self._on_frame_press, add="+")
+        self.bind("<B1-Motion>", self._on_frame_drag, add="+")
+        self.bind("<ButtonRelease-1>", self._on_frame_release, add="+")
+
+    def _apply_taskbar_style(self) -> None:
+        """Возвращает окну кнопку в панели задач и запись в Alt+Tab.
+
+        Окно с ``overrideredirect`` Tk создаёт как tool-window (WS_EX_TOOLWINDOW):
+        у него нет ни кнопки на панели задач, ни Alt+Tab. Флаг WS_EX_APPWINDOW
+        это исправляет — окно остаётся без заголовка, но ведёт себя как
+        обычное приложение.
+        """
+        hwnd = _window_hwnd(self)
+        if not hwnd:
+            return
+        try:
+            import ctypes
+            gwl_exstyle = -20
+            ws_ex_appwindow = 0x00040000
+            ws_ex_toolwindow = 0x00000080
+            style = ctypes.windll.user32.GetWindowLongW(hwnd, gwl_exstyle)
+            style = (style | ws_ex_appwindow) & ~ws_ex_toolwindow
+            ctypes.windll.user32.SetWindowLongW(hwnd, gwl_exstyle, style)
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------ грань окна
+    def _edge_at(self, x_root: int, y_root: int):
+        """Грань или угол окна под курсором (None — курсор внутри окна)."""
+        x, y = self.winfo_rootx(), self.winfo_rooty()
+        width, height = self.winfo_width(), self.winfo_height()
+        left = x_root - x <= EDGE_GRIP
+        right = x + width - x_root <= EDGE_GRIP
+        top = y_root - y <= EDGE_GRIP
+        bottom = y + height - y_root <= EDGE_GRIP
+        vertical = "n" if top else ("s" if bottom else "")
+        horizontal = "w" if left else ("e" if right else "")
+        return (vertical + horizontal) or None
+
+    def _on_frame_motion(self, event):
+        """Подсказывает курсором, за какую грань сейчас можно тянуть."""
+        if not self._frameless or self._maximized:
+            return
+        if self._drag_offset or self._resize_edge:
+            return
+        edge = self._edge_at(event.x_root, event.y_root)
+        cursor = EDGE_CURSORS.get(edge, "")
+        if cursor == self._frame_cursor:
+            return
+        self._frame_cursor = cursor
+        try:
+            self.configure(cursor=cursor)
+        except Exception:
+            self._frame_cursor = ""
+
+    def _on_frame_press(self, event):
+        """Начало тяги за край окна (изменение размера)."""
+        if not self._frameless or self._maximized:
+            return
+        if self._drag_offset:
+            return                       # уже тянем окно за шапку
+        edge = self._edge_at(event.x_root, event.y_root)
+        if not edge:
+            return
+        self._resize_edge = edge
+        self._resize_start = (event.x_root, event.y_root,
+                              self.winfo_x(), self.winfo_y(),
+                              self.winfo_width(), self.winfo_height())
+
+    def _on_frame_drag(self, event):
+        if self._resize_edge:
+            self._resize_to(event)
+        elif self._drag_offset:
+            self._move_to(event)
+
+    def _on_frame_release(self, _event=None):
+        self._resize_edge = None
+        self._resize_start = None
+        self._drag_offset = None
+
+    def _move_to(self, event) -> None:
+        """Двигает окно так, чтобы точка захвата осталась под курсором."""
+        if not self._drag_offset or self._maximized:
+            # Развёрнутое окно не двигаем: двойной клик по шапке успевает
+            # начать перетаскивание и тут же разворачивает окно.
+            return
+        dx, dy = self._drag_offset
+        self.geometry(f"+{event.x_root - dx}+{event.y_root - dy}")
+
+    def _resize_to(self, event) -> None:
+        """Тянет ту грань, за которую взялись; противоположная на месте."""
+        if not self._resize_start or not self._resize_edge:
+            return
+        x0, y0, win_x, win_y, win_w, win_h = self._resize_start
+        dx = event.x_root - x0
+        dy = event.y_root - y0
+        min_w, min_h = MIN_WIDTH, MIN_HEIGHT
+        left, top = win_x, win_y
+        right, bottom = win_x + win_w, win_y + win_h
+        if "w" in self._resize_edge:
+            left = min(win_x + dx, right - min_w)
+        elif "e" in self._resize_edge:
+            right = max(win_x + win_w + dx, left + min_w)
+        if "n" in self._resize_edge:
+            top = min(win_y + dy, bottom - min_h)
+        elif "s" in self._resize_edge:
+            bottom = max(win_y + win_h + dy, top + min_h)
+        self.geometry(f"{right - left}x{bottom - top}+{left}+{top}")
+
+    # ------------------------------------------------- перетаскивание за шапку
+    def _bind_header_drag(self, widget) -> None:
+        """Вешает перетаскивание окна на элемент шапки.
+
+        Шапка состоит из нескольких виджетов, поэтому обработчики вешаются
+        на каждый: клик по названию или знаку должен двигать окно так же,
+        как клик по пустому месту.
+        """
+        widget.bind("<ButtonPress-1>", self._on_header_press, add="+")
+        widget.bind("<B1-Motion>", self._on_header_drag, add="+")
+        widget.bind("<ButtonRelease-1>", self._on_frame_release, add="+")
+        widget.bind("<Double-Button-1>",
+                    lambda _e: self._toggle_maximize(), add="+")
+
+    def _on_header_press(self, event):
+        if not self._frameless or self._maximized:
+            return
+        if self._edge_at(event.x_root, event.y_root):
+            return                       # это тяга за край, а не перенос
+        self._drag_offset = (event.x_root - self.winfo_x(),
+                             event.y_root - self.winfo_y())
+
+    def _on_header_drag(self, event):
+        if self._drag_offset:
+            self._move_to(event)
+
+    # ------------------------------------------ свернуть / развернуть / закрыть
+    def _center_window(self) -> None:
+        """Ставит окно по центру рабочей области при запуске.
+
+        Окно без рамки Windows ставит «каскадом» к верхнему левому углу —
+        выглядит случайно. Центр рабочей области (без панели задач) читается
+        лучше и всегда гарантирует, что шапка на экране.
+        """
+        area = _work_area()
+        if area:
+            area_x, area_y, area_w, area_h = area
+        else:
+            area_x = area_y = 0
+            area_w, area_h = self.winfo_screenwidth(), self.winfo_screenheight()
+        try:
+            width, height = (int(v) for v in self.geometry().split("+")[0].split("x"))
+        except Exception:
+            width, height = MIN_WIDTH, MIN_HEIGHT
+        x = area_x + max(0, (area_w - width) // 2)
+        y = area_y + max(0, (area_h - height) // 2)
+        self.geometry(f"+{x}+{y}")
+
+    def _minimize_window(self) -> None:
+        """Сворачивает окно в панель задач.
+
+        ``iconify()`` у окна с ``overrideredirect`` падает с TclError
+        («override-redirect flag is set»), поэтому просим об этом Windows
+        напрямую: сворачивание и восстановление из панели задач работают
+        как у обычного окна, геометрия сохраняется.
+        """
+        hwnd = _window_hwnd(self)
+        if hwnd:
+            try:
+                import ctypes
+                ctypes.windll.user32.ShowWindow(hwnd, 6)  # SW_MINIMIZE
+                return
+            except Exception:
+                pass
+        try:
+            self.iconify()
+        except tk.TclError:
+            pass
+
+    def _toggle_maximize(self) -> None:
+        if self._maximized:
+            self._restore_window()
+        else:
+            self._maximize_window()
+
+    def _maximize_window(self) -> None:
+        """Разворачивает окно на рабочую область (без панели задач)."""
+        if self._maximized:
+            return
+        self._restore_geom = (self.winfo_x(), self.winfo_y(),
+                              self.winfo_width(), self.winfo_height())
+        area = _work_area()
+        if area:
+            x, y, width, height = area
+        else:
+            x = y = 0
+            width, height = self.winfo_screenwidth(), self.winfo_screenheight()
+        self.geometry(f"{width}x{height}+{x}+{y}")
+        self._maximized = True
+        self._sync_max_button()
+
+    def _restore_window(self) -> None:
+        """Возвращает окно к размеру и месту до разворота."""
+        if not self._maximized:
+            return
+        self._maximized = False
+        if self._restore_geom:
+            x, y, width, height = self._restore_geom
+            self.geometry(f"{width}x{height}+{x}+{y}")
+        self._sync_max_button()
+
+    def _sync_max_button(self) -> None:
+        """Перерисовывает значок кнопки: «развернуть» или «восстановить»."""
+        if self._max_btn is None:
+            return
+        try:
+            self._max_btn.configure(text="❐" if self._maximized else "□")
         except Exception:
             pass
 
     # ============================================================== ШАПКА
     def _build_header(self):
-        header = ctk.CTkFrame(self, fg_color=COLOR_CARD, corner_radius=14, height=58)
-        header.pack(fill="x", padx=14, pady=(12, 8))
+        """Своя шапка окна: знак, название, язык и кнопки управления.
+
+        Системного заголовка у окна нет (``_setup_frameless``), поэтому
+        шапка — единственное место, где видно название программы и где окно
+        можно перетащить. Кнопки справа повторяют поведение обычного окна.
+        """
+        header = ctk.CTkFrame(self, fg_color=COLOR_CARD, corner_radius=0,
+                              height=52)
+        header.pack(fill="x")
         header.pack_propagate(False)
+        self._bind_header_drag(header)
 
         left = ctk.CTkFrame(header, fg_color="transparent")
-        left.pack(side="left", padx=(16, 0), pady=11)
+        left.pack(side="left", padx=(14, 0), pady=11)
+        self._bind_header_drag(left)
 
-        mark = tk.Canvas(left, width=26, height=26, bg=COLOR_CARD, highlightthickness=0)
+        mark = tk.Canvas(left, width=26, height=26, bg=COLOR_CARD,
+                         highlightthickness=0)
         mark.pack(side="left", padx=(0, 10))
         # Знак бренда: «S» мятного цвета в фиолетовом орбитальном кольце —
         # ровно то, что на иконке программы.
         mark.create_oval(1, 1, 25, 25, outline=COLOR_VIOLET, width=2)
         mark.create_text(13, 13, text="S", fill=COLOR_MINT,
                          font=("Segoe UI", 15, "bold"))
+        self._bind_header_drag(mark)
 
-        ctk.CTkLabel(left, text=i18n.t("app.name"),
-                     font=ctk.CTkFont(size=15, weight="bold"),
-                     text_color=COLOR_TEXT).pack(side="left")
+        name = ctk.CTkLabel(left, text=i18n.t("app.name"),
+                            font=ctk.CTkFont(size=15, weight="bold"),
+                            text_color=COLOR_TEXT)
+        name.pack(side="left")
+        self._bind_header_drag(name)
 
-        ctk.CTkLabel(left, text=i18n.t("app.version"),
-                     font=ctk.CTkFont(size=10, weight="bold"),
-                     text_color=COLOR_MINT, fg_color=COLOR_CARD_2,
-                     corner_radius=8, width=52, height=20).pack(side="left", padx=(10, 0))
+        version = ctk.CTkLabel(left, text=i18n.t("app.version"),
+                               font=ctk.CTkFont(size=10, weight="bold"),
+                               text_color=COLOR_MINT, fg_color=COLOR_CARD_2,
+                               corner_radius=8, width=52, height=20)
+        version.pack(side="left", padx=(10, 0))
+        self._bind_header_drag(version)
+
+        # Кнопки окна — у самого правого края, как в обычном окне Windows.
+        close_btn = self._window_button(header, "✕", self._on_close,
+                                        hover=COLOR_RED, text_color=COLOR_TEXT)
+        close_btn.pack(side="right", padx=(0, 10), pady=11)
+        self._max_btn = self._window_button(header, "□", self._toggle_maximize)
+        self._max_btn.pack(side="right", padx=(0, 2), pady=11)
+        self._window_button(header, "—", self._minimize_window).pack(
+            side="right", padx=(0, 2), pady=11)
+        self._sync_max_button()
 
         self.admin_label = ctk.CTkLabel(header, text="",
                                         font=ctk.CTkFont(size=10, weight="bold"),
@@ -481,6 +827,22 @@ class CleanerApp(ctk.CTk):
         self._lang_switch.pack(side="right", padx=(0, 8))
         self._lang_label.pack(side="right", padx=(0, 6))
         self._sync_lang_switch()
+
+        # Тонкая линия под шапкой: ею окно отделено от содержимого — иначе
+        # шапка и фон сливаются в одно тёмное поле.
+        ctk.CTkFrame(self, fg_color=COLOR_LINE, height=1,
+                     corner_radius=0).pack(fill="x")
+
+    def _window_button(self, parent, glyph: str, command,
+                       hover: str = COLOR_CARD_2,
+                       text_color: str = COLOR_MUTED):
+        """Кнопка управления окном в шапке (свернуть/развернуть/закрыть)."""
+        return ctk.CTkButton(
+            parent, text=glyph, width=40, height=30, corner_radius=8,
+            fg_color="transparent", hover_color=hover,
+            text_color=text_color,
+            font=ctk.CTkFont(size=13, weight="bold"),
+            command=command)
 
     # ------------------------------------------------------ смена языка
     def _sync_lang_switch(self):
@@ -570,6 +932,8 @@ class CleanerApp(ctk.CTk):
         self.pkg_header = None
         self._lang_switch = None
         self._lang_label = None
+        # Кнопка разворота пересоздаётся вместе с шапкой.
+        self._max_btn = None
         self.opt_os_label = None
         self.opt_live = None
         self.opt_tip = None
@@ -664,7 +1028,7 @@ class CleanerApp(ctk.CTk):
 
     def _build_body(self):
         body = ctk.CTkFrame(self, fg_color="transparent")
-        body.pack(fill="both", expand=True, padx=14)
+        body.pack(fill="both", expand=True, padx=14, pady=(12, 0))
         body.grid_columnconfigure(0, weight=0, minsize=RAIL_LEFT)
         body.grid_columnconfigure(1, weight=1)
         body.grid_columnconfigure(2, weight=0, minsize=RAIL_RIGHT)

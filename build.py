@@ -153,6 +153,9 @@ def main() -> int:
     assets_dir = os.path.join(BASE, "assets")
     if os.path.isdir(assets_dir):
         cmd += ["--add-data", assets_dir + os.pathsep + "assets"]
+    # app.ico — для надёжной иконки заголовка/панели задач в собранном exe.
+    if os.path.isfile(ICON):
+        cmd += ["--add-data", ICON + os.pathsep + "."]
     if os.path.isfile(version_file):
         cmd += ["--version-file", version_file]
     if not (args.no_admin or args.test):
