@@ -47,11 +47,11 @@ VERSION_INFO_TEMPLATE = """VSVersionInfo(
   kids=[
     StringFileInfo([
       StringTable('040904B0', [
-        StringStruct('CompanyName', 'Swept'),
+        StringStruct('CompanyName', 'Vladcodex'),
         StringStruct('FileDescription', 'Swept — safe Windows 10/11 cleanup'),
         StringStruct('FileVersion', '{ver_str}'),
         StringStruct('InternalName', 'cleaner_gui'),
-        StringStruct('LegalCopyright', 'Freeware'),
+        StringStruct('LegalCopyright', 'Copyright (c) 2026 Vladcodex'),
         StringStruct('OriginalFilename', '{exe_name}.exe'),
         StringStruct('ProductName', 'Swept'),
         StringStruct('ProductVersion', '{ver_str}'),
