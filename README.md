@@ -32,6 +32,10 @@ the portable ZIP (unpack it anywhere and run `Swept.exe`; settings stay in that 
 executable (a normal Windows installer with a Start Menu shortcut and a proper uninstaller). What
 changed in each version is listed on the releases page.
 
+![Swept — Analyze first, delete later](docs/demo.gif)
+
+*Analyze measures and prints every path it would touch. Nothing is deleted until you press Clean.*
+
 ![Swept — cleanup tab, English interface](docs/cleanup-en.png)
 
 *Screenshot shows the English interface. The app ships with English and Russian and lets you
