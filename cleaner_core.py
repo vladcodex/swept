@@ -725,6 +725,24 @@ CATEGORIES = [
      "title_en": "Logs (.log) and memory dumps (.dmp)",                    "group": "quick",   "icon": "📄"},
     {"key": "recycle",      "title": "Корзина Windows",
      "title_en": "Windows Recycle Bin",                                    "group": "quick",   "icon": "🗑"},
+
+    # Дополнительные места: в интерфейсе это ОДНА свёрнутая строка (см.
+    # COLLAPSED_GROUPS), чтобы список категорий не разрастался. Всё здесь —
+    # кэш, эскизы и логи, которые система и приложения создают заново.
+    # Стоит сразу после быстрой очистки: это тот же класс мусора.
+    {"key": "thumb_cache",   "title": "Эскизы, иконки, кэш шрифтов",
+     "title_en": "Thumbnails, icons, font cache",                          "group": "extra",   "icon": "🖼"},
+    {"key": "prefetch",      "title": "Prefetch (кэш запуска программ)",
+     "title_en": "Prefetch (app launch cache)",                            "group": "extra",   "icon": "⚡"},
+    {"key": "delivery_opt",  "title": "Кэш оптимизации доставки",
+     "title_en": "Delivery Optimization cache",                            "group": "extra",   "icon": "📦"},
+    {"key": "shader_cache",  "title": "Кэш шейдеров видеокарты",
+     "title_en": "GPU shader cache",                                       "group": "extra",   "icon": "🎛"},
+    {"key": "office_cache",  "title": "Кэш Microsoft Office",
+     "title_en": "Microsoft Office cache",                                 "group": "extra",   "icon": "📊"},
+    {"key": "discord_cache", "title": "Discord",                           "group": "extra",   "icon": "💬"},
+    {"key": "spotify_cache", "title": "Spotify",                           "group": "extra",   "icon": "🎵"},
+
     {"key": "chrome",       "title": "Google Chrome",                      "group": "privacy", "icon": "🌐"},
     {"key": "yandex",       "title": "Яндекс.Браузер", "title_en": "Yandex Browser",
                                                                            "group": "privacy", "icon": "🌐"},
@@ -745,6 +763,7 @@ GROUP_TITLES = {
     "quick": "Быстрая очистка",
     "privacy": "Кэш браузеров",
     "games": "Игровые лаунчеры",
+    "extra": "Дополнительные места",
 }
 
 # То же на английском (используется при переключении языка интерфейса).
@@ -752,7 +771,12 @@ GROUP_TITLES_EN = {
     "quick": "Quick cleanup",
     "privacy": "Browser cache",
     "games": "Game launchers",
+    "extra": "More places",
 }
+
+# Группы, которые в интерфейсе свёрнуты в одну строку и раскрываются по клику:
+# новых пунктов становится больше, а список категорий — нет.
+COLLAPSED_GROUPS = {"extra"}
 
 
 def group_title(key: str) -> str:
@@ -924,6 +948,74 @@ def get_jobs(key: str, selected=None) -> list:
         jobs.append({"type": "dir",
                      "path": os.path.join(env["programdata"], "GOG.com", "Galaxy", "cache"),
                      "label": "GOG\\cache"})
+
+    # ---------- ДОПОЛНИТЕЛЬНЫЕ МЕСТА ---------------------------------------
+    # Общее правило то же: чистим только кэш/логи. Ничего пользовательского
+    # (сохранения, документы, пароли) здесь нет — всё это система и
+    # приложения создают заново при следующем запуске.
+    elif key == "thumb_cache":
+        # Эскизы и иконки Проводника. Пока Проводник открыт, часть файлов
+        # занята — недоступные просто пропускаются, остальное он пересоздаст.
+        jobs.append({"type": "glob",
+                     "path": os.path.join(env["local"], "Microsoft", "Windows", "Explorer"),
+                     "patterns": ["thumbcache_*.db", "iconcache_*.db"],
+                     "label": "Explorer\\thumbcache"})
+        jobs.append({"type": "dir",
+                     "path": os.path.join(env["local"], "FontCache"),
+                     "label": "FontCache"})
+
+    elif key == "prefetch":
+        # Windows пересоздаёт Prefetch сама; первый запуск программ после
+        # очистки будет чуть медленнее, дальше — как обычно.
+        jobs.append({"type": "dir",
+                     "path": os.path.join(env["windir"], "Prefetch"),
+                     "label": "Windows\\Prefetch"})
+
+    elif key == "delivery_opt":
+        # Кэш «Оптимизации доставки» (те же файлы, что чистит «Очистка диска»).
+        jobs.append({"type": "dir",
+                     "path": os.path.join(env["windir"], "ServiceProfiles",
+                                          "NetworkService", "AppData", "Local",
+                                          "Microsoft", "Windows",
+                                          "DeliveryOptimization", "Cache"),
+                     "label": "DeliveryOptimization\\Cache"})
+
+    elif key == "shader_cache":
+        # Кэш скомпилированных шейдеров GPU: драйвер соберёт его заново.
+        for sub in (("D3DSCache",),
+                    ("NVIDIA", "DXCache"),
+                    ("NVIDIA", "GLCache"),
+                    ("AMD", "DxCache"),
+                    ("AMD", "DxcCache"),
+                    ("Intel", "ShaderCache")):
+            jobs.append({"type": "dir",
+                         "path": os.path.join(env["local"], *sub),
+                         "label": "\\".join(sub)})
+
+    elif key == "office_cache":
+        # Кэш «открытых недавно» файлов Office. Сами документы не трогаем —
+        # они лежат в личных папках, а сюда попадают только их копии.
+        for ver in ("16.0", "15.0"):
+            jobs.append({"type": "dir",
+                         "path": os.path.join(env["local"], "Microsoft",
+                                              "Office", ver, "OfficeFileCache"),
+                         "label": "Office {}\\OfficeFileCache".format(ver)})
+
+    elif key == "discord_cache":
+        for app in ("discord", "discordcanary", "discordptb"):
+            root = os.path.join(env["roaming"], app)
+            for sub in ("Cache", "Code Cache", "GPUCache"):
+                jobs.append({"type": "dir",
+                             "path": os.path.join(root, sub),
+                             "label": app + "\\" + sub})
+
+    elif key == "spotify_cache":
+        # Storage — скачанные для офлайна треки, Data — служебный кэш.
+        root = os.path.join(env["local"], "Spotify")
+        for sub in ("Storage", "Data"):
+            jobs.append({"type": "dir",
+                         "path": os.path.join(root, sub),
+                         "label": "Spotify\\" + sub})
 
     return jobs
 

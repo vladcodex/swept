@@ -47,7 +47,7 @@ portable program with five tabs:
 
 | Tab | What it is for |
 |---|---|
-| **🧹 Cleanup** | Frees disk space: temp files, browser caches, Windows Update cache, Recycle Bin, logs, dumps and game-launcher junk across 15 categories. Always analyzes before deleting. Also checks and cleans the WinSxS component store with the official DISM commands. |
+| **🧹 Cleanup** | Frees disk space: temp files, browser caches, Windows Update cache, Recycle Bin, logs, dumps and game-launcher junk across 22 categories, including thumbnails, Prefetch, Delivery Optimization, GPU shader cache, Office, Discord and Spotify. Always analyzes before deleting. Also checks and cleans the WinSxS component store with the official DISM commands. |
 | **📦 Install** | A curated catalog of 24 popular programs plus 12 Visual C++ Redistributable packages, fetched from the vendors' own CDNs and verified by signature or pinned hash before anything runs. |
 | **⚡ Optimize** | 12 safe Windows tweaks (telemetry, power plan, background apps, Game DVR, debloat) with a system restore point created before any change, plus a "why is it slow" audit that names the causes with real numbers and measures the effect. |
 | **⏰ Schedule** | Quiet automatic cleanup: daily or weekly, dry run first, restore point before deletion, optionally driven by a Windows Task Scheduler task that runs Swept headless in the background. |
@@ -99,8 +99,12 @@ of it is verified before it runs.
 | Group | Categories |
 |---|---|
 | Quick cleanup | User temp (`%TEMP%`), system temp (`C:\Windows\Temp`), Windows update cache, `.log` / `.dmp` files, Recycle Bin |
+| More places | Explorer thumbnails and icons, font cache, Prefetch, Delivery Optimization cache, GPU shader cache, Office file cache, Discord, Spotify |
 | Browser cache | Chrome, Yandex Browser, Edge, Firefox — cache, history, cookies |
 | Game launchers | Steam, Epic, Ubisoft Connect, EA App, Battle.net, GOG Galaxy — caches, logs, temp data |
+
+The *More places* group is collapsed into a single line in the window and expands on click, so the
+list of categories stays short even as the number of cleanup targets grows.
 
 - **Analyze first, delete later.** The Analyze button only measures; nothing is touched until you press Clean.
 - **Scan-only switch.** Even the Clean button can run in simulation mode.

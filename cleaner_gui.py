@@ -409,6 +409,9 @@ class CleanerApp(ctk.CTk):
         self.browser_opt = {}          # {ключ_браузера: {подопция: BooleanVar}}
         self._browser_opt_frames = {}  # {ключ_браузера: под-панель под-опций}
         self._browser_opt_rows = {}    # {ключ_браузера: строка (для pack after=)}
+        self._group_cards = {}         # {группа: карточка свёрнутого блока}
+        self._group_buttons = {}       # {группа: (кнопка, заголовок, число)}
+        self._group_expanded = {}      # {группа: раскрыта ли}
         self.scan_results = {}
         # Режим «только сканирование» живёт дольше одного построения панели:
         # модуль очистки создаётся лениво, а флаг нужен и до его открытия.
@@ -947,6 +950,9 @@ class CleanerApp(ctk.CTk):
         self.browser_opt = {}
         self._browser_opt_frames = {}
         self._browser_opt_rows = {}
+        self._group_cards = {}
+        self._group_buttons = {}
+        self._group_expanded = {}
         self.opt_vars = {}
         self._info_widgets = {}
         self.pkg_rows = []
@@ -1702,6 +1708,12 @@ class CleanerApp(ctk.CTk):
             groups.setdefault(cat["group"], []).append(cat)
 
         for group_key, cats in groups.items():
+            # «Дополнительные места» занимают одну строку и раскрываются
+            # по клику — иначе список категорий вырос бы вдвое.
+            if group_key in core.COLLAPSED_GROUPS:
+                self._build_collapsed_group(panel, group_key, cats)
+                continue
+
             title = core.group_title(group_key)
             ctk.CTkLabel(panel, text=title.upper(),
                          font=ctk.CTkFont(size=11, weight="bold"),
@@ -1711,38 +1723,7 @@ class CleanerApp(ctk.CTk):
             card.pack(fill="x", padx=4, pady=2)
 
             for cat in cats:
-                var = tk.BooleanVar(value=True)
-                self.vars[cat["key"]] = var
-                row = ctk.CTkFrame(card, fg_color="transparent")
-                row.pack(fill="x", padx=10, pady=4)
-
-                ctk.CTkCheckBox(row, text="{} {}".format(cat["icon"], i18n.fld(cat, "title")),
-                                variable=var, font=ctk.CTkFont(size=13),
-                                text_color=COLOR_TEXT, checkbox_width=20, checkbox_height=20,
-                                fg_color=COLOR_ACCENT, hover_color=COLOR_ACCENT_HOVER
-                                ).pack(side="left")
-
-                info = ctk.CTkLabel(row, text="", font=ctk.CTkFont(size=11),
-                                    text_color=COLOR_MUTED)
-                info.pack(side="right")
-                self._info_widgets[cat["key"]] = info
-
-                # Для браузеров — шестерёнка: раскрывает раздельные настройки
-                # очистки (кэш / cookie / история / пароли …), как в Wise.
-                if cat["key"] in core.BROWSER_KEYS:
-                    gear = ctk.CTkButton(
-                        row, text="⚙", width=26, height=22,
-                        font=ctk.CTkFont(size=12),
-                        fg_color=COLOR_CARD, hover_color=COLOR_ACCENT,
-                        text_color=COLOR_MUTED,
-                        command=lambda k=cat["key"]: self._toggle_browser_opts(k))
-                    gear.pack(side="right", padx=(8, 0))
-                    sub = ctk.CTkFrame(card, fg_color="transparent")
-                    sub.pack(fill="x", padx=(22, 10), pady=(0, 4))
-                    sub.pack_forget()  # скрыта, пока не нажмут ⚙
-                    self._browser_opt_frames[cat["key"]] = sub
-                    self._browser_opt_rows[cat["key"]] = row
-                    self._build_browser_opt_sub(sub, cat["key"])
+                self._build_category_row(card, cat)
 
         buttons = ctk.CTkFrame(panel, fg_color="transparent")
         buttons.pack(fill="x", padx=4, pady=(12, 6))
@@ -1803,6 +1784,109 @@ class CleanerApp(ctk.CTk):
 
         # Хранилище компонентов (WinSxS) — теперь отдельный модуль орбиты,
         # поэтому здесь его блок не создаётся.
+
+    # -------------------------------------------------- строки категорий
+    def _build_category_row(self, card, cat) -> None:
+        """Одна строка категории: галочка, подпись с размером, при нужде ⚙."""
+        var = tk.BooleanVar(value=True)
+        self.vars[cat["key"]] = var
+        row = ctk.CTkFrame(card, fg_color="transparent")
+        row.pack(fill="x", padx=10, pady=4)
+
+        ctk.CTkCheckBox(row, text="{} {}".format(cat["icon"], i18n.fld(cat, "title")),
+                        variable=var, font=ctk.CTkFont(size=13),
+                        text_color=COLOR_TEXT, checkbox_width=20, checkbox_height=20,
+                        fg_color=COLOR_ACCENT, hover_color=COLOR_ACCENT_HOVER
+                        ).pack(side="left")
+
+        info = ctk.CTkLabel(row, text="", font=ctk.CTkFont(size=11),
+                            text_color=COLOR_MUTED)
+        info.pack(side="right")
+        self._info_widgets[cat["key"]] = info
+
+        # Для браузеров — шестерёнка: раскрывает раздельные настройки
+        # очистки (кэш / cookie / история / пароли …), как в Wise.
+        if cat["key"] in core.BROWSER_KEYS:
+            gear = ctk.CTkButton(
+                row, text="⚙", width=26, height=22,
+                font=ctk.CTkFont(size=12),
+                fg_color=COLOR_CARD, hover_color=COLOR_ACCENT,
+                text_color=COLOR_MUTED,
+                command=lambda k=cat["key"]: self._toggle_browser_opts(k))
+            gear.pack(side="right", padx=(8, 0))
+            sub = ctk.CTkFrame(card, fg_color="transparent")
+            sub.pack(fill="x", padx=(22, 10), pady=(0, 4))
+            sub.pack_forget()  # скрыта, пока не нажмут ⚙
+            self._browser_opt_frames[cat["key"]] = sub
+            self._browser_opt_rows[cat["key"]] = row
+            self._build_browser_opt_sub(sub, cat["key"])
+
+    def _build_collapsed_group(self, parent, group_key: str, cats: list) -> None:
+        """
+        Свёрнутая группа: заголовок-кнопка со счётчиком, внутри — обычные
+        строки категорий. Список в панели не растёт, а пункты доступны.
+        """
+        title = core.group_title(group_key).upper()
+        btn = ctk.CTkButton(parent, text="▸  {} · {}".format(title, len(cats)),
+                            anchor="w", height=26, corner_radius=8,
+                            fg_color="transparent", hover_color=COLOR_CARD,
+                            text_color=COLOR_ACCENT,
+                            font=ctk.CTkFont(size=11, weight="bold"),
+                            command=lambda k=group_key: self._toggle_group(k))
+        btn.pack(fill="x", padx=6, pady=(12, 2))
+
+        card = ctk.CTkFrame(parent, fg_color=COLOR_CARD, corner_radius=10)
+        for cat in cats:
+            self._build_category_row(card, cat)
+
+        self._group_cards[group_key] = card
+        self._group_buttons[group_key] = (btn, title, len(cats))
+        # Состояние «раскрыта» храним отдельно: winfo_ismapped() врёт, когда
+        # модуль очистки ещё не открыт, и заголовок терял бы стрелку.
+        self._group_expanded[group_key] = False
+
+    def _group_text(self, group_key: str, expanded: bool) -> str:
+        """Подпись заголовка свёрнутой группы: стрелка, название, число, объём."""
+        entry = self._group_buttons.get(group_key)
+        title = entry[1] if entry else group_key
+        count = entry[2] if entry else 0
+        total = 0
+        for cat in core.CATEGORIES:
+            if cat["group"] == group_key:
+                total += int((self.scan_results.get(cat["key"]) or {}).get("total_size", 0))
+        text = "{}  {} · {}".format("▾" if expanded else "▸", title, count)
+        # Объём показываем только когда он есть: пустая группа не должна
+        # занимать строку «0 Б».
+        if total:
+            text += " · " + core.format_bytes(total)
+        return text
+
+    def _toggle_group(self, group_key: str) -> None:
+        """Раскрывает/сворачивает группу категорий по клику на заголовок."""
+        card = self._group_cards.get(group_key)
+        entry = self._group_buttons.get(group_key)
+        if card is None or entry is None:
+            return
+        btn = entry[0]
+        expanded = not self._group_expanded.get(group_key, False)
+        self._group_expanded[group_key] = expanded
+        if expanded:
+            # after= возвращает карточку ровно под её заголовок
+            # (pack_forget теряет исходную позицию в списке).
+            card.pack(fill="x", padx=4, pady=2, after=btn)
+        else:
+            card.pack_forget()
+        btn.configure(text=self._group_text(group_key, expanded))
+
+    def _refresh_group_headers(self) -> None:
+        """Обновляет подписи свёрнутых групп после анализа (объём в заголовке)."""
+        for group_key in self._group_buttons:
+            entry = self._group_buttons[group_key]
+            try:
+                entry[0].configure(text=self._group_text(
+                    group_key, self._group_expanded.get(group_key, False)))
+            except Exception:
+                pass
 
     # -------------------------------------------------- настройки браузеров
     def _toggle_browser_opts(self, key: str) -> None:
@@ -2840,10 +2924,14 @@ class CleanerApp(ctk.CTk):
         elif kind == "results_update":
             # Воркер прислал новые результаты скана — вливаем в главном потоке.
             self.scan_results.update(msg[1])
+            # В заголовке свёрнутой группы показываем её суммарный объём,
+            # чтобы её не приходилось раскрывать ради цифры.
+            self._refresh_group_headers()
         elif kind == "results_clear":
             # После реальной очистки сбрасываем устаревшие результаты.
             for key in msg[1]:
                 self.scan_results.pop(key, None)
+            self._refresh_group_headers()
         elif kind == "freed_delta":
             # Накопление реально освобождённого места за сессию.
             self.total_freed += msg[1]
