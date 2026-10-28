@@ -28,6 +28,7 @@ cleaner_gui.py — ГРАФИЧЕСКИЙ ИНТЕРФЕЙС (CustomTkinter) д�
 from __future__ import annotations
 
 import copy
+import ctypes
 import datetime
 import math
 import os
@@ -829,6 +830,9 @@ class CleanerApp(ctk.CTk):
                                         fg_color=COLOR_CARD_2, corner_radius=8,
                                         width=86, height=22)
         self.admin_label.pack(side="right", padx=(0, 14))
+        # Без прав эта плашка — кнопка перезапуска с повышением: молча
+        # работать «наполовину» хуже, чем одним кликом получить права.
+        self.admin_label.bind("<Button-1>", lambda _e: self._on_admin_chip())
         self._refresh_admin_label()
 
         # Выпадающий список языка интерфейса (Русский / English).
@@ -983,6 +987,7 @@ class CleanerApp(ctk.CTk):
         self.top_box = None
         self.top_rows = []
         self.top_empty = None
+        self.top_header = None
 
         self.title(i18n.t("app.title"))
         self._build_shell()
@@ -1771,11 +1776,15 @@ class CleanerApp(ctk.CTk):
 
         # Крупнейшие категории: заполняется после анализа, чтобы в панели
         # управления не оставалось пустоты, а пользователь видел, что нашлось.
-        ctk.CTkLabel(right, text=i18n.t("clean.top").upper(),
-                     font=ctk.CTkFont(size=10, weight="bold"),
-                     text_color=COLOR_MUTED).pack(anchor="w", padx=14)
-        self.top_box = ctk.CTkFrame(right, fg_color="transparent")
-        self.top_box.pack(fill="x", padx=14, pady=(6, 12))
+        # Список прокручиваемый и полный: раньше он обрезался пятёркой, и
+        # найденные категории за её пределами просто не показывались.
+        self.top_header = ctk.CTkLabel(right, text=i18n.t("clean.top").upper(),
+                                       font=ctk.CTkFont(size=10, weight="bold"),
+                                       text_color=COLOR_MUTED)
+        self.top_header.pack(anchor="w", padx=14)
+        self.top_box = ctk.CTkScrollableFrame(right, fg_color="transparent",
+                                              height=250)
+        self.top_box.pack(fill="x", padx=(14, 6), pady=(6, 12))
         self.top_rows = []
         self.top_empty = ctk.CTkLabel(self.top_box, text=i18n.t("clean.top_empty"),
                                       font=ctk.CTkFont(size=11),
@@ -2709,10 +2718,47 @@ class CleanerApp(ctk.CTk):
         self._log(i18n.t("log.admin_no_1"))
         self._log(i18n.t("log.admin_no_2"))
         # Предупреждение показываем один раз за запуск (не при смене языка).
-        if not self._admin_warned:
-            self._admin_warned = True
+        if self._admin_warned:
+            return
+        self._admin_warned = True
+        # Собранная программа сразу предлагает перезапуск с правами: держать
+        # пользователя за руку «закройте и откройте заново» незачем.
+        # Из исходников спрашивать нечего — там перезапуск делает разработчик,
+        # и предупреждение остаётся просто справкой.
+        if getattr(sys, "frozen", False):
+            if messagebox.askyesno(i18n.t("dlg.no_admin_title"),
+                                   i18n.t("dlg.no_admin_ask")):
+                self._restart_elevated()
+        else:
             messagebox.showwarning(i18n.t("dlg.no_admin_title"),
                                    i18n.t("dlg.no_admin_text"))
+
+    def _on_admin_chip(self):
+        """Клик по плашке прав: без прав — перезапуск с повышением."""
+        if self._admin_ok:
+            return
+        self._restart_elevated()
+
+    def _restart_elevated(self):
+        """Перезапускает программу с правами администратора (запрос UAC)."""
+        try:
+            if getattr(sys, "frozen", False):
+                exe = sys.executable
+                params = ""
+            else:
+                # Из исходников: python.exe + путь к скрипту отдельным аргументом.
+                exe = sys.executable
+                params = '"{}"'.format(os.path.abspath(__file__))
+            result = ctypes.windll.shell32.ShellExecuteW(
+                None, "runas", exe, params, None, 1)
+            if result > 32:
+                # Новая копия запущена — эта закрывается.
+                self._on_close()
+            else:
+                # Пользователь отказался в UAC: работаем без прав, как раньше.
+                self._log(i18n.t("log.admin_no_2"))
+        except Exception as exc:
+            self._log(i18n.t("log.error") + repr(exc))
 
     def _log(self, text: str):
         self.msg_queue.put(("log", text))
@@ -2829,11 +2875,12 @@ class CleanerApp(ctk.CTk):
         return {"frame": row, "title": title, "value": value, "bar": bar}
 
     def _render_top_categories(self):
-        """Пятёрка самых «тяжёлых» категорий — чтобы итог был наглядным.
+        """Все категории с найденным мусором, по убыванию объёма.
 
         Строки создаются один раз и дальше только обновляются: пересборка
-        пяти строк стоила ~30 мс, а вызывается этот метод на каждый старт
-        и финиш операции.
+        строк стоила ~30 мс, а вызывается этот метод на каждый старт
+        и финиш операции. Список полный (прокручивается), а не «топ-5»:
+        иначе найденные категории за пределами пятёрки не были видны.
         """
         box = getattr(self, "top_box", None)
         if box is None or getattr(self, "top_empty", None) is None:
@@ -2843,18 +2890,19 @@ class CleanerApp(ctk.CTk):
                  for key, res in self.scan_results.items()]
         items = [item for item in items if item[1] > 0]
         items.sort(key=lambda item: item[1], reverse=True)
-        items = items[:5]
 
         if not items:
             # Пусто — показываем спокойную подсказку вместо пустоты.
             for row in self.top_rows:
                 row["frame"].pack_forget()
+            self._set_top_header(0)
             if not self.top_empty.winfo_manager():
                 self.top_empty.pack(anchor="w")
             return
 
         if self.top_empty.winfo_manager():
             self.top_empty.pack_forget()
+        self._set_top_header(len(items))
 
         while len(self.top_rows) < len(items):
             self.top_rows.append(self._top_row())
@@ -2875,8 +2923,28 @@ class CleanerApp(ctk.CTk):
                 title = cut.rstrip(" ,;·—(") + "…"
             row["title"].configure(text=title)
             row["value"].configure(text=core.format_bytes(size))
-            self._tween_bar(row["bar"], min(1.0, size / float(heaviest)))
+            share = min(1.0, size / float(heaviest))
+            # Анимируем только верх списка: два десятка полос, ползущих
+            # одновременно, заметно подтормаживают перерисовку.
+            if index < 5:
+                self._tween_bar(row["bar"], share)
+            else:
+                try:
+                    row["bar"].set(share)
+                except Exception:
+                    pass
             row["frame"].pack(fill="x", pady=(0, 6))
+
+    def _set_top_header(self, count: int):
+        """Заголовок списка: «КРУПНЕЙШИЕ КАТЕГОРИИ · 9» (число найденных)."""
+        label = getattr(self, "top_header", None)
+        if label is None:
+            return
+        base = i18n.t("clean.top").upper()
+        try:
+            label.configure(text="{} · {}".format(base, count) if count else base)
+        except Exception:
+            pass
 
     # ================================================== ОБРАБОТКА ОЧЕРЕДИ
     def _poll_queue(self):

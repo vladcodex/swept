@@ -344,8 +344,12 @@ STRINGS = {
         "dlg.no_admin_text": "Программа запущена без прав администратора.\n\n"
                              "Часть системных файлов (C:\\Windows\\Temp, кэш обновлений) "
                              "будет недоступна и пропущена.\n\n"
-                             "Для полной очистки закройте программу и запустите её "
-                             "от имени администратора.",
+                             "Чтобы получить права, нажмите на плашку «Без прав» "
+                             "в шапке окна.",
+        "dlg.no_admin_ask": "Программа запущена без прав администратора.\n\n"
+                            "Часть системных файлов (C:\\Windows\\Temp, кэш обновлений) "
+                            "будет недоступна и пропущена.\n\n"
+                            "Перезапустить с правами администратора?",
         "dlg.no_categories_title": "Нет категорий",
         "dlg.no_categories_text": "Отметьте хотя бы одну категорию.",
         "dlg.confirm_clean_title": "Подтверждение очистки",
@@ -807,8 +811,12 @@ STRINGS = {
         "dlg.no_admin_text": "The program is running without administrator rights.\n\n"
                              "Some system files (C:\\Windows\\Temp, update cache) will be "
                              "unavailable and skipped.\n\n"
-                             "For a full cleanup close the program and run it as "
-                             "administrator.",
+                             "To get them, click the \"NO ADMIN\" badge in the window "
+                             "header.",
+        "dlg.no_admin_ask": "The program is running without administrator rights.\n\n"
+                            "Some system files (C:\\Windows\\Temp, update cache) will be "
+                            "unavailable and skipped.\n\n"
+                            "Restart with administrator rights?",
         "dlg.no_categories_title": "No categories",
         "dlg.no_categories_text": "Select at least one category.",
         "dlg.confirm_clean_title": "Confirm cleanup",
