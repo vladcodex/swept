@@ -440,6 +440,8 @@ class CleanerApp(ctk.CTk):
         self._closing = False         # флаг закрытия окна
         self._admin_ok = None         # кэш проверки прав администратора
         self._admin_warned = False    # предупреждение показано только один раз
+        self._warned_categories = set()   # категории, предупреждение по которым уже принято
+        self._suppress_warn = False       # «Выбрать всё» ставит галочки пачкой
         self._tab_index = 0           # активная вкладка (для смены языка)
         self.log_box = None           # поле журнала (строится лениво)
         self._log_backlog = []        # строки, накопленные до его открытия
@@ -1797,7 +1799,7 @@ class CleanerApp(ctk.CTk):
     # -------------------------------------------------- строки категорий
     def _build_category_row(self, card, cat) -> None:
         """Одна строка категории: галочка, подпись с размером, при нужде ⚙."""
-        var = tk.BooleanVar(value=True)
+        var = tk.BooleanVar(value=cat["key"] not in core.WARN_ON_ENABLE)
         self.vars[cat["key"]] = var
         row = ctk.CTkFrame(card, fg_color="transparent")
         row.pack(fill="x", padx=10, pady=4)
@@ -1807,6 +1809,12 @@ class CleanerApp(ctk.CTk):
                         text_color=COLOR_TEXT, checkbox_width=20, checkbox_height=20,
                         fg_color=COLOR_ACCENT, hover_color=COLOR_ACCENT_HOVER
                         ).pack(side="left")
+
+        # Категории с заметными последствиями предупреждают в момент включения
+        # галочки, а не после удаления: включиться молча она не должна.
+        if cat["key"] in core.WARN_ON_ENABLE:
+            var.trace_add("write",
+                          lambda *_, k=cat["key"], v=var: self._on_warn_category(k, v))
 
         info = ctk.CTkLabel(row, text="", font=ctk.CTkFont(size=11),
                             text_color=COLOR_MUTED)
@@ -1937,6 +1945,24 @@ class CleanerApp(ctk.CTk):
                              font=ctk.CTkFont(size=10),
                              text_color=COLOR_MUTED).pack(
                     anchor="w", padx=26, pady=(0, 2))
+
+    def _on_warn_category(self, key: str, var: tk.BooleanVar) -> None:
+        """
+        Включение категории с заметными последствиями (кэш шейдеров):
+        спрашиваем подтверждение один раз за сессию, при отказе возвращаем
+        галочку в выключенное состояние. Тексты берутся по ключу категории,
+        поэтому новая «рискованная» категория требует только двух строк в i18n.
+        """
+        if self._suppress_warn or not var.get() or key in self._warned_categories:
+            return
+        title = i18n.t("dlg.warn_{}_title".format(key))
+        text = i18n.t("dlg.warn_{}_text".format(key))
+        if title == "dlg.warn_{}_title".format(key):
+            return  # предупреждения для этой категории не описаны
+        if messagebox.askyesno(title, text, icon="warning", default="no"):
+            self._warned_categories.add(key)
+        else:
+            var.set(False)
 
     def _on_browser_opt(self, key: str, sub: dict, var: tk.BooleanVar) -> None:
         """
@@ -2721,17 +2747,20 @@ class CleanerApp(ctk.CTk):
         if self._admin_warned:
             return
         self._admin_warned = True
-        # Собранная программа сразу предлагает перезапуск с правами: держать
-        # пользователя за руку «закройте и откройте заново» незачем.
-        # Из исходников спрашивать нечего — там перезапуск делает разработчик,
-        # и предупреждение остаётся просто справкой.
-        if getattr(sys, "frozen", False):
-            if messagebox.askyesno(i18n.t("dlg.no_admin_title"),
-                                   i18n.t("dlg.no_admin_ask")):
-                self._restart_elevated()
-        else:
-            messagebox.showwarning(i18n.t("dlg.no_admin_title"),
-                                   i18n.t("dlg.no_admin_text"))
+        # Тесты и скрипты съёмки скриншотов поднимают окно без прав нарочно:
+        # SWEPT_NO_ELEVATE=1 отключает автоперезапуск, чтобы они не плодили
+        # повышенные копии себя.
+        if os.environ.get("SWEPT_NO_ELEVATE"):
+            return
+        # Без прав часть категорий молча пропускается, поэтому перезапуск
+        # с повышением предлагаем всегда — и для собранного exe, и при
+        # запуске из исходников (там поднимаем тот же интерпретатор).
+        # Кнопка по умолчанию — «Нет»: если диалог закроют не читая (или его
+        # некому нажать), приложение не начнёт само себя перезапускать.
+        if messagebox.askyesno(i18n.t("dlg.no_admin_title"),
+                               i18n.t("dlg.no_admin_ask"),
+                               icon="warning", default="no"):
+            self._restart_elevated()
 
     def _on_admin_chip(self):
         """Клик по плашке прав: без прав — перезапуск с повышением."""
@@ -2746,11 +2775,15 @@ class CleanerApp(ctk.CTk):
                 exe = sys.executable
                 params = ""
             else:
-                # Из исходников: python.exe + путь к скрипту отдельным аргументом.
+                # Из исходников: тот же интерпретатор + тот же скрипт, что
+                # запускал пользователь (sys.argv[0], а не __file__: точкой
+                # входа может быть обёртка). Рабочая папка передаётся явно,
+                # иначе повышенная копия откроется в System32.
                 exe = sys.executable
-                params = '"{}"'.format(os.path.abspath(__file__))
+                entry = sys.argv[0] if sys.argv and sys.argv[0] else __file__
+                params = '"{}"'.format(os.path.abspath(entry))
             result = ctypes.windll.shell32.ShellExecuteW(
-                None, "runas", exe, params, None, 1)
+                None, "runas", exe, params, os.getcwd(), 1)
             if result > 32:
                 # Новая копия запущена — эта закрывается.
                 self._on_close()
@@ -2820,8 +2853,19 @@ class CleanerApp(ctk.CTk):
         self._append_log_lines([text])
 
     def _set_all(self, value: bool):
-        for var in self.vars.values():
-            var.set(value)
+        # Галочки ставятся пачкой, поэтому предупреждения показываем после
+        # цикла — иначе диалог всплывал бы посреди перебора категорий.
+        self._suppress_warn = True
+        try:
+            for var in self.vars.values():
+                var.set(value)
+        finally:
+            self._suppress_warn = False
+        if value:
+            for key in core.WARN_ON_ENABLE:
+                var = self.vars.get(key)
+                if var is not None and var.get():
+                    self._on_warn_category(key, var)
 
     def _selected_keys(self) -> list:
         return [key for key, var in self.vars.items() if var.get()]
@@ -3614,9 +3658,16 @@ class CleanerApp(ctk.CTk):
                         self._append_log(i18n.t("log.browsers_close_failed", names))
         dry_run = self.scan_only_var.get()
         if not dry_run:
-            if not messagebox.askyesno(
-                    i18n.t("dlg.confirm_clean_title"),
-                    i18n.t("dlg.confirm_clean_text")):
+            # Категории с последствиями упоминаем прямо в подтверждении:
+            # отдельный диалог подряд только раздражает.
+            confirm_text = i18n.t("dlg.confirm_clean_text")
+            for key in core.WARN_ON_ENABLE:
+                if key in keys:
+                    extra = i18n.t("dlg.confirm_warn_{}".format(key))
+                    if not extra.startswith("dlg.confirm_warn_"):
+                        confirm_text += "\n\n" + extra
+            if not messagebox.askyesno(i18n.t("dlg.confirm_clean_title"),
+                                       confirm_text):
                 return
         self._start_clean_worker(mode="clean", keys=keys, dry_run=dry_run,
                                  selected_map=self._browser_selected_map())
@@ -4205,6 +4256,10 @@ class CleanerApp(ctk.CTk):
                     # Старые настройки без списка известных ключей: не рискуем
                     # включать то, что пользователь мог осознанно отключить.
                     default = (cat["key"] in saved_set) if saved_set else True
+                # «Рискованные» категории по умолчанию выключены: расписание
+                # не должно удалять их молча, без предупреждения.
+                if cat["key"] in core.WARN_ON_ENABLE and cat["key"] not in saved_set:
+                    default = False
                 var = tk.BooleanVar(value=default)
                 self.sched_vars[cat["key"]] = var
                 ctk.CTkCheckBox(cat_card,

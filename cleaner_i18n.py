@@ -157,6 +157,19 @@ STRINGS = {
         "dlg.browser_opt_text": "Вы включаете «{0}». Это безвозвратно удалит "
                                 "личные данные браузера (cookie, историю, пароли "
                                 "и т.п.). Продолжить?",
+        "dlg.warn_shader_cache_title": "Кэш шейдеров видеокарты",
+        "dlg.warn_shader_cache_text":
+            "«Кэш шейдеров видеокарты» — это уже скомпилированные шейдеры игр "
+            "и программ, работающих через GPU.\n\n"
+            "Удаление безопасно: они соберутся заново. Но первое время игры "
+            "могут подтормаживать и загружаться дольше, пока шейдеры "
+            "компилируются. Если место на диске не критично, эту категорию "
+            "лучше не отмечать.\n\n"
+            "Всё равно включить её?",
+        "dlg.confirm_warn_shader_cache":
+            "Вместе с остальным будет удалён кэш шейдеров видеокарты: игры "
+            "соберут его заново при следующем запуске, возможны "
+            "подтормаживания.",
         "btn.analyze": "🔍  Анализ",
         "btn.clean": "🧹  Очистить",
         "btn.stop": "⏹  Стоп",
@@ -624,6 +637,19 @@ STRINGS = {
         "dlg.browser_opt_text": "You are enabling “{0}”. This will permanently "
                                 "delete the browser's personal data (cookies, "
                                 "history, passwords, etc.). Continue?",
+        "dlg.warn_shader_cache_title": "GPU shader cache",
+        "dlg.warn_shader_cache_text":
+            "The GPU shader cache holds shaders that games and GPU apps have "
+            "already compiled.\n\n"
+            "Deleting it is safe — they get rebuilt. But for a while games may "
+            "stutter and load slower while shaders are compiled again. If you "
+            "are not short on disk space, it is better to leave this category "
+            "off.\n\n"
+            "Enable it anyway?",
+        "dlg.confirm_warn_shader_cache":
+            "The GPU shader cache will be deleted along with everything else: "
+            "games will rebuild it on their next launch, which can cause "
+            "temporary stutter.",
         "btn.analyze": "🔍  Analyze",
         "btn.clean": "🧹  Clean",
         "btn.stop": "⏹  Stop",
