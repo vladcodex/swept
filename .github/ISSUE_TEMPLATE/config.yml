@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or idea
+    url: https://github.com/vladcodex/swept/discussions
+    about: Bugs go to Issues. Everything else — questions, ideas, general talk — belongs in Discussions.
