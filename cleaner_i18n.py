@@ -64,7 +64,7 @@ STRINGS = {
 
         # --- оболочка Orbit: модули, рельсы, лента ---
         "app.name": "SWEPT",
-        "app.version": "v1.3.0",
+        "app.version": "v1.4.0",
         "mod.clean": "Очистка",
         "mod.clean.sub": "Категории мусора и кэшей",
         "mod.install": "Установка",
@@ -527,7 +527,7 @@ STRINGS = {
 
         # --- Orbit shell: modules, rails, ribbon ---
         "app.name": "SWEPT",
-        "app.version": "v1.3.0",
+        "app.version": "v1.4.0",
         "mod.clean": "Cleanup",
         "mod.clean.sub": "Junk and cache categories",
         "mod.install": "Install",
