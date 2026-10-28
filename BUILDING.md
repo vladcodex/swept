@@ -106,6 +106,17 @@ timestamped but the chain is untrusted: UAC and SmartScreen still say "Unknown p
 real distribution trust, replace the `.pfx` with a trusted OSS code-signing certificate and point
 `$pfxPath` in `sign.ps1` at it.
 
+`sign.ps1` signs `dist\Swept\Swept.exe` and the **newest** `dist\Swept-Setup-*.exe`. If installers
+from earlier versions are still sitting in `dist\`, move them aside before the first run — otherwise
+the script re-signs the previous release's setup and leaves the new one unsigned. The order is:
+
+```bat
+build.py            :: dist\Swept\
+sign.ps1            :: the app exe
+ISCC setup.iss      :: dist\Swept-Setup-<version>.exe
+sign.ps1            :: the installer
+```
+
 ## Command line
 
 The three modules also work on their own — handy for scripts and scheduled tasks.

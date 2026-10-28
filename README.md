@@ -28,9 +28,9 @@ No telemetry, no bundled offers, no background services — and every deleted fi
 setting is written to the log.
 
 **[⬇ Download the latest release](https://github.com/vladcodex/swept/releases/latest)** — either
-the portable `Swept.exe` (just run it) or the setup executable (a normal Windows installer with a
-Start Menu shortcut and a proper uninstaller). What changed in each version is listed on the
-releases page.
+the portable ZIP (unpack it anywhere and run `Swept.exe`; settings stay in that folder) or the setup
+executable (a normal Windows installer with a Start Menu shortcut and a proper uninstaller). What
+changed in each version is listed on the releases page.
 
 ![Swept — cleanup tab, English interface](docs/cleanup-en.png)
 
@@ -71,10 +71,12 @@ portable program with five tabs:
 network access is the HTTPS download you explicitly start from the Install tab, and every byte
 of it is verified before it runs.
 
-> **Not a virus.** The builds are not code-signed, so SmartScreen may warn about an unknown
-> publisher on first run — an Authenticode certificate costs hundreds of dollars a year and this
-> is a free, open-source project. The full source is public, every build is reproducible from it,
-> and the program only ever deletes files inside its own whitelisted categories.
+> **About the SmartScreen warning.** Every build carries an Authenticode signature (`CN=Vladcodex`,
+> DigiCert timestamp), but it is a self-signed certificate rather than one chained to a trusted root —
+> a commercial certificate costs hundreds of dollars a year and this is a free, open-source project.
+> Windows therefore still reports an unknown publisher on first run. The signer is visible under
+> *Properties → Digital Signatures*, the full source is public, and the program only ever deletes
+> files inside its own whitelisted categories.
 
 ---
 
@@ -281,7 +283,8 @@ follows you rather than the folder.
   5–20 minutes to clean. It cannot be interrupted once started — closing the window leaves DISM
   working in the background. The verdict is whatever DISM reports for your build; Swept only
   translates and displays it.
-- The `.exe` is not code-signed, so SmartScreen may warn about an unknown publisher on first run.
+- The `.exe` is signed with a self-signed certificate (`CN=Vladcodex`), not one chained to a trusted
+  root, so SmartScreen may still warn about an unknown publisher on first run.
 
 ## Feedback
 
