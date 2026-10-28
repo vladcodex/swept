@@ -960,8 +960,11 @@ def get_jobs(key: str, selected=None) -> list:
                      "path": os.path.join(env["local"], "Microsoft", "Windows", "Explorer"),
                      "patterns": ["thumbcache_*.db", "iconcache_*.db"],
                      "label": "Explorer\\thumbcache"})
-        jobs.append({"type": "dir",
+        # Кэш шрифтов — только сами файлы кэша (*.dat), а не вся папка:
+        # если рядом окажется что-то ещё, оно должно остаться.
+        jobs.append({"type": "glob",
                      "path": os.path.join(env["local"], "FontCache"),
+                     "patterns": ["fontcache*.dat"],
                      "label": "FontCache"})
 
     elif key == "prefetch":

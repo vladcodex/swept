@@ -4113,6 +4113,12 @@ class CleanerApp(ctk.CTk):
 
         saved = (self._schedule_setting("Categories", "") or "").split(",")
         saved_set = set(s for s in saved if s)
+        # Список категорий, которые существовали на момент сохранения выбора.
+        # Нужен, чтобы отличить «пользователь снял галочку» от «категория
+        # появилась в новой версии»: вторые включаем, первые уважаем.
+        known_set = set(k for k in
+                        (self._schedule_setting("CategoriesAll", "") or "").split(",")
+                        if k)
         self.sched_vars = {}
         groups = {}
         for cat in core.CATEGORIES:
@@ -4123,7 +4129,14 @@ class CleanerApp(ctk.CTk):
                          text_color=COLOR_ACCENT
                          ).pack(anchor="w", padx=12, pady=(8, 2))
             for cat in cats:
-                default = (cat["key"] in saved_set) if saved_set else True
+                if known_set:
+                    # Новые категории (которых не было в сохранённом списке)
+                    # включены по умолчанию — как и на вкладке «Очистка».
+                    default = (cat["key"] in saved_set) or (cat["key"] not in known_set)
+                else:
+                    # Старые настройки без списка известных ключей: не рискуем
+                    # включать то, что пользователь мог осознанно отключить.
+                    default = (cat["key"] in saved_set) if saved_set else True
                 var = tk.BooleanVar(value=default)
                 self.sched_vars[cat["key"]] = var
                 ctk.CTkCheckBox(cat_card,
@@ -4252,6 +4265,10 @@ class CleanerApp(ctk.CTk):
                 "Dry", "1" if self.sched_dry_var.get() else "0")
             keys = [k for k, v in self.sched_vars.items() if v.get()]
             self._save_schedule_setting("Categories", ",".join(keys))
+            # Полный список категорий на этот момент — чтобы в следующей
+            # версии отличить новые пункты от отключённых вручную.
+            self._save_schedule_setting("CategoriesAll",
+                                        ",".join(self.sched_vars.keys()))
             self.schedule_reschedule.set()
             self._update_schedule_status()
         except Exception as exc:
