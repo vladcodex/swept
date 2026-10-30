@@ -36,8 +36,6 @@ cleaner_core.py — МОДУЛЬ ЛОГИКИ безопасной очистк�
     * Любая ошибка доступа/блокировки перехватывается и пропускается —
       программа не падает из-за занятого файла.
     * Есть режим "только сканирование" (dry_run) — ничего не удаляется.
-
-Автор: WorkBuddy AI
 """
 
 from __future__ import annotations
@@ -150,10 +148,15 @@ PROTECTED_FILES = {
 
 def _norm(path: str) -> str:
     """Нормализует путь: абсолютный, нижний регистр, без хвостового слэша."""
+    if not path:
+        # Пустая строка и None не должны превращаться в текущий каталог:
+        # os.path.abspath("") возвращает CWD, и «пустой путь» внезапно
+        # становится рабочей папкой программы — а она в белый список не входит.
+        return ""
     try:
         p = os.path.abspath(path)
     except Exception:
-        p = path
+        p = str(path)
     p = p.replace("/", os.sep).lower()
     # убираем хвостовой разделитель, но не превращаем "c:\" в "c:"
     while len(p) > 3 and p.endswith(os.sep):
@@ -1065,7 +1068,10 @@ def _in_allowed(path: str, allowed: dict) -> bool:
     if is_reparse_point(path):
         return False
     if p in allowed.get("files", set()):
-        return True
+        # Отдельно разрешённый файл тоже не должен оказаться в личной папке:
+        # проверка ниже касается только каталогов, и без этой строки файл,
+        # попавший в белый список по имени, обходил бы её.
+        return not is_sensitive_user_path(_real_norm(path))
     real_dirs = allowed.get("real_dirs") or {}
     for d in allowed.get("dirs", set()):
         if p == d or p.startswith(d + os.sep):
@@ -1287,7 +1293,16 @@ def safe_delete_file(path: str, allowed: dict, dry_run: bool = False) -> str:
         "blocked"   — путь защищён или не входит в белый список;
         "error"     — файл занят/нет прав (перехвачено, программа продолжает).
     """
-    abspath = os.path.abspath(path)
+    # 0) Мусор на входе — сразу отказ, до любых преобразований пути.
+    #    Пустая строка превратилась бы в текущий каталог (abspath("") == cwd),
+    #    а NUL внутри пути обрезал бы его уже в Win32 API: и то и другое
+    #    увело бы удаление туда, чего в белом списке нет.
+    if not isinstance(path, str) or not path or "\x00" in path:
+        return "blocked"
+    try:
+        abspath = os.path.abspath(path)
+    except (OSError, ValueError):
+        return "blocked"
 
     # 1) Чёрный список — не трогаем.
     if is_protected(abspath):

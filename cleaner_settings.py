@@ -23,8 +23,6 @@ cleaner_settings.py — ХРАНЕНИЕ НАСТРОЕК ПРОГРАММЫ В 
       обычный JSON-файл рядом с программой.
     * Если параметра в реестре ещё нет, но есть старый settings.json
       (версии до 1.1), значение из него переносится в реестр один раз.
-
-Автор: WorkBuddy AI
 """
 
 from __future__ import annotations
@@ -134,15 +132,32 @@ class Settings:
         return data if isinstance(data, dict) else {}
 
     def _write_file(self, name: str, value) -> bool:
-        """Пишет значение в JSON-файл, сохраняя остальные ключи."""
+        """
+        Пишет значение в JSON-файл, сохраняя остальные ключи.
+
+        Запись атомарная: сначала во временный файл рядом, затем os.replace
+        поверх старого. Прямая запись "в лоб" сначала обрезает файл, поэтому
+        обрыв питания или падение в этот момент оставили бы пустой settings.json
+        — а читатель на битом JSON возвращает {}, то есть настройки пропали бы
+        все сразу. os.replace в пределах одного каталога атомарен.
+        """
         path = _json_path()
         data = self._read_file()
         data[name] = value
+        tmp_path = path + ".tmp"
         try:
-            with open(path, "w", encoding="utf-8") as handle:
+            with open(tmp_path, "w", encoding="utf-8") as handle:
                 json.dump(data, handle, ensure_ascii=False, indent=2)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(tmp_path, path)
             return True
         except Exception:
+            # Временный файл мог остаться — убираем, чтобы не копился мусор.
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
             return False
 
     # --------------------------------------------------------------- публично

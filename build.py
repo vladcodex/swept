@@ -27,7 +27,7 @@ import sys
 BASE = os.path.dirname(os.path.abspath(__file__))
 BUILD_DIR = os.path.join(BASE, ".build")
 APP_NAME = "Swept"
-VERSION = (1, 4, 0, 0)
+VERSION = (1, 5, 0, 0)
 ICON = os.path.join(BASE, "app.ico")
 ENTRY = os.path.join(BASE, "cleaner_gui.py")
 # Имя маркера портативной сборки (должно совпадать с cleaner_settings.PORTABLE_MARKER).

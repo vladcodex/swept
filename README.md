@@ -25,7 +25,8 @@ Free and open source, with a dark interface available in **two languages — Eng
   in the background even when the app is closed.
 
 No telemetry, no bundled offers, no background services — and every deleted file and changed
-setting is written to the log.
+setting is written to the log. The version chip in the header checks GitHub for a newer release,
+but only when you click it: nothing is sent at startup and nothing is downloaded automatically.
 
 **[⬇ Download the latest release](https://github.com/vladcodex/swept/releases/latest)** — either
 the portable ZIP (unpack it anywhere and run `Swept.exe`; settings stay in that folder) or the setup
@@ -76,8 +77,8 @@ portable program with five tabs:
   `swept_silent_clean.log` next to the binary.
 
 **Privacy:** no telemetry, no analytics, no bundled offers, no background services. The only
-network access is the HTTPS download you explicitly start from the Install tab, and every byte
-of it is verified before it runs.
+network access is what you start yourself — the HTTPS download from the Install tab, and the update
+check you click — and every downloaded byte is verified before it runs.
 
 > **About the SmartScreen warning.** Every build carries an Authenticode signature (`CN=Vladcodex`,
 > DigiCert timestamp), but it is a self-signed certificate rather than one chained to a trusted root —
@@ -231,20 +232,25 @@ Swept is built around the assumption that a cleaner must never be able to eat yo
    are refused by name.
 4. **Dry run by default in the CLI**, one explicit confirmation in the GUI before real deletion.
 5. **Errors never stop the run** — a locked file is counted as "skipped", not as a crash.
-6. **No network access** except the HTTPS downloads you explicitly start from the Install tab, and
-   no data collection of any kind.
+6. **No network access on its own.** Two things can reach the network, both started by you: the
+   HTTPS downloads from the Install tab, and the single GitHub API request the update chip makes
+   when you click it. Nothing is sent at startup, and no data is collected of any kind. The update
+   request accepts HTTPS only, refuses a redirect to plain HTTP, reads at most 256 KB, and opens the
+   returned link only if it is `https` on `github.com` — a tampered answer can make the program say
+   "no update", never run something.
 7. **Links are never followed.** Junctions, symlinks and other reparse points are skipped during
    scanning and refused during deletion. A `%TEMP%` junction pointing at `Documents` would otherwise
    turn "clear temporary files" into "delete my documents" — so the real target path is checked
    against the whitelist as well, and personal folders (`Documents`, `Desktop`, `Downloads`,
-   `Pictures`, OneDrive…) are refused even when they appear inside an allowed root.
+   `Pictures`, OneDrive…) are refused even when they appear inside an allowed root, or as a single
+   file whitelisted by name.
 8. **No `PATH` lookups for elevated tools.** The packaged app runs as administrator, so `powercfg`,
    `tasklist`, `msiexec` and `powershell` are resolved to their real files in `%SystemRoot%\System32`
    instead of being taken from `PATH`, where a planted executable would inherit elevation.
-9. **No shell string ever reaches the OS.** Installers are started as an argument vector with
-   `shell=False`: the path and every silent-install switch are separate list elements, and the
-   switches come from a hardcoded catalog rather than from anything typed by the user. There is no
-   `os.system` and no `shell=True` anywhere in the module.
+9. **No shell string ever reaches the OS.** Every external command is an argument vector with
+   `shell=False`: the path and each switch are separate list elements, and the switches come from a
+   hardcoded catalog rather than from anything typed by the user. There is no `os.system` and no
+   `shell=True` anywhere in the program — the scheduled-task helper included.
 10. **Downloaded files are not trusted until they prove themselves.** See the two checks above. The
     handle is opened with `FILE_SHARE_READ` and held across verification and launch, and the hash is
     recomputed from disk under that lock, so the binary cannot be swapped in between (TOCTOU).

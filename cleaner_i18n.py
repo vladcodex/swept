@@ -55,6 +55,45 @@ STRINGS = {
         "admin.chip_no": "БЕЗ ПРАВ",
         "lang.label": "Язык",
 
+        # ---------------------------------------------- проверка обновлений
+        # Плашка в шапке: до нажатия — просто кнопка, сеть не трогается.
+        "update.chip": "⭮ ОБНОВЛЕНИЯ",
+        "update.checking": "⭮ ПРОВЕРКА…",
+        "update.available": "⬆ {0}",
+        "update.current": "✔ АКТУАЛЬНО",
+        "update.error": "⚠ НЕТ СВЯЗИ",
+        "update.log_check": "Проверка обновлений…",
+        "update.log_available": "Доступна новая версия {0}. Скачать её можно "
+                                "со страницы релизов в настройках.",
+        "update.log_current": "Установлена последняя версия ({0}).",
+        "update.log_error": "Не удалось проверить обновления: {0}",
+
+        # ------------------------------------------------- окно настроек
+        "settings.title": "Настройки",
+        "settings.section_ui": "Интерфейс",
+        "settings.language_hint": "Язык применяется сразу и запоминается "
+                                  "между запусками.",
+        "settings.section_behavior": "Поведение",
+        "settings.scan_only": "Только сканировать",
+        "settings.scan_only_hint": "Кнопка «Очистить» покажет, что удалила бы, "
+                                   "но ничего не тронет. Настройка сохраняется.",
+        "settings.section_updates": "Обновления",
+        "settings.version_now": "Текущая версия: {0}",
+        "settings.check_updates": "Проверить обновления",
+        "settings.updates_hint": "Запрос уходит на GitHub только по нажатию — "
+                                 "при запуске программа в сеть не ходит.",
+        "settings.section_storage": "Где хранятся настройки",
+        "settings.storage_registry": "Реестр Windows: {0}",
+        "settings.storage_file": "Файл рядом с программой: {0}",
+        "settings.storage_unknown": "Расположение определить не удалось.",
+        "settings.section_about": "О программе",
+        "settings.about_text": "Swept {0} — свободная программа для очистки "
+                               "и настройки Windows 10/11. Без рекламы, "
+                               "телеметрии и фоновых служб.",
+        "settings.open_releases": "Страница релизов",
+        "settings.license": "Лицензия MIT",
+        "settings.close": "Закрыть",
+
         # --------------------------------------------------------- вкладки
         "tab.clean": "  🧹 Очистка  ",
         "tab.install": "  📦 Установка  ",
@@ -64,7 +103,7 @@ STRINGS = {
 
         # --- оболочка Orbit: модули, рельсы, лента ---
         "app.name": "SWEPT",
-        "app.version": "v1.4.0",
+        "app.version": "v1.5.0",
         "mod.clean": "Очистка",
         "mod.clean.sub": "Категории мусора и кэшей",
         "mod.install": "Установка",
@@ -535,6 +574,45 @@ STRINGS = {
         "admin.chip_no": "NO ADMIN",
         "lang.label": "Language",
 
+        # ------------------------------------------------ update check
+        # Header chip: a plain button until pressed — no network before that.
+        "update.chip": "⭮ UPDATES",
+        "update.checking": "⭮ CHECKING…",
+        "update.available": "⬆ {0}",
+        "update.current": "✔ UP TO DATE",
+        "update.error": "⚠ NO CONNECTION",
+        "update.log_check": "Checking for updates…",
+        "update.log_available": "Version {0} is available. Download it from "
+                                "the releases page in Settings.",
+        "update.log_current": "The latest version is installed ({0}).",
+        "update.log_error": "Could not check for updates: {0}",
+
+        # ---------------------------------------------------- settings window
+        "settings.title": "Settings",
+        "settings.section_ui": "Interface",
+        "settings.language_hint": "Applied immediately and remembered "
+                                  "between runs.",
+        "settings.section_behavior": "Behaviour",
+        "settings.scan_only": "Scan only",
+        "settings.scan_only_hint": "The Clean button will report what it would "
+                                   "delete without touching anything. Saved.",
+        "settings.section_updates": "Updates",
+        "settings.version_now": "Current version: {0}",
+        "settings.check_updates": "Check for updates",
+        "settings.updates_hint": "The request goes to GitHub only when you press "
+                                 "it — nothing is sent at startup.",
+        "settings.section_storage": "Where settings are stored",
+        "settings.storage_registry": "Windows registry: {0}",
+        "settings.storage_file": "File next to the program: {0}",
+        "settings.storage_unknown": "Could not determine the location.",
+        "settings.section_about": "About",
+        "settings.about_text": "Swept {0} — free software for cleaning and "
+                               "tuning Windows 10/11. No ads, no telemetry, "
+                               "no background services.",
+        "settings.open_releases": "Releases page",
+        "settings.license": "MIT license",
+        "settings.close": "Close",
+
         # --------------------------------------------------------- вкладки
         "tab.clean": "  🧹 Cleanup  ",
         "tab.install": "  📦 Install  ",
@@ -544,7 +622,7 @@ STRINGS = {
 
         # --- Orbit shell: modules, rails, ribbon ---
         "app.name": "SWEPT",
-        "app.version": "v1.4.0",
+        "app.version": "v1.5.0",
         "mod.clean": "Cleanup",
         "mod.clean.sub": "Junk and cache categories",
         "mod.install": "Install",

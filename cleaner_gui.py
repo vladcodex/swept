@@ -55,6 +55,7 @@ import cleaner_i18n as i18n
 import cleaner_installer as inst
 import cleaner_optimize as opt
 import cleaner_settings as settings
+import cleaner_update as updater
 
 # =============================================================================
 # НАСТРОЙКИ ВНЕШНЕГО ВИДА
@@ -371,6 +372,219 @@ class PresetDialog(ctk.CTkToplevel):
             pass
 
 
+class SettingsDialog(ctk.CTkToplevel):
+    """
+    Окно настроек программы.
+
+    Показывает только то, что действительно настраивается и где-то хранится:
+    язык интерфейса, режим «только сканирование», место хранения настроек,
+    версия с проверкой обновлений. Каждый переключатель здесь куда-то
+    пишется — «настроек ради настроек» в окне нет намеренно: пустой тумблер,
+    который ничего не меняет, хуже, чем его отсутствие.
+    """
+
+    def __init__(self, master):
+        super().__init__(master)
+
+        self.app = master
+        self._closed = False
+
+        self.title(i18n.t("settings.title"))
+        self.geometry("560x620")
+        self.resizable(False, False)
+        self.configure(fg_color=COLOR_BG)
+        self.transient(master)
+        self.protocol("WM_DELETE_WINDOW", self._close)
+
+        wrap = ctk.CTkFrame(self, fg_color=COLOR_CARD_2, corner_radius=12)
+        wrap.pack(fill="both", expand=True, padx=PAD_WRAP, pady=PAD_WRAP)
+
+        # Своего заголовка внутри окна нет: он уже написан в системной рамке,
+        # а дублировать его — значит отнимать высоту у последнего раздела
+        # (он и так ужимается первым, когда содержимое не помещается).
+
+        # Ряд кнопок упаковываем сразу и снизу: он забирает своё место
+        # до того, как содержимое попросит пространство, и не пропадает.
+        buttons = ctk.CTkFrame(wrap, fg_color="transparent")
+        buttons.pack(fill="x", side="bottom", padx=14, pady=(6, 12))
+        ctk.CTkButton(buttons, text=i18n.t("settings.close"), width=110,
+                      height=30, fg_color=COLOR_CARD,
+                      hover_color=COLOR_ACCENT,
+                      command=self._close).pack(side="right")
+
+        # ------------------------------------------------------- интерфейс
+        self._section(wrap, "settings.section_ui", first=True)
+        ui_box = self._card(wrap)
+
+        ui_row = ctk.CTkFrame(ui_box, fg_color="transparent")
+        ui_row.pack(fill="x", padx=12, pady=(10, 4))
+        ctk.CTkLabel(ui_row, text=i18n.t("lang.label"),
+                     font=ctk.CTkFont(size=12),
+                     text_color=COLOR_TEXT).pack(side="left")
+        # Пока идёт очистка, язык менять нельзя: интерфейс перерисовывается,
+        # а рабочий поток держит ссылки на старые виджеты.
+        self._lang_box = ctk.CTkComboBox(
+            ui_row, values=i18n.language_values(),
+            command=self._on_language, width=150, height=28,
+            font=ctk.CTkFont(size=11), dropdown_font=ctk.CTkFont(size=12),
+            state="disabled" if self.app.running else "readonly",
+            fg_color=COLOR_CARD_2, border_color=COLOR_LINE,
+            button_color=COLOR_CARD_2, button_hover_color=COLOR_ACCENT,
+            dropdown_fg_color=COLOR_CARD_2, dropdown_hover_color=COLOR_ACCENT,
+            dropdown_text_color=COLOR_TEXT, text_color=COLOR_TEXT)
+        self._lang_box.set(i18n.language_name())
+        self._lang_box.pack(side="right")
+        self._hint(ui_box, "settings.language_hint")
+
+        # -------------------------------------------------------- поведение
+        self._section(wrap, "settings.section_behavior")
+        beh_box = self._card(wrap)
+        # Переменная общая с переключателем на вкладке очистки: менять режим
+        # из двух мест — нормально, расходиться они не должны.
+        self._scan_switch = ctk.CTkSwitch(
+            beh_box, text=i18n.t("settings.scan_only"),
+            variable=self.app.scan_only_var,
+            command=self._on_scan_only,
+            font=ctk.CTkFont(size=12), text_color=COLOR_TEXT,
+            progress_color=COLOR_ACCENT, button_color=COLOR_MUTED,
+            button_hover_color=COLOR_TEXT)
+        self._scan_switch.pack(anchor="w", padx=12, pady=(10, 2))
+        self._hint(beh_box, "settings.scan_only_hint")
+
+        # ------------------------------------------------------- обновления
+        self._section(wrap, "settings.section_updates")
+        upd_box = self._card(wrap)
+        upd_row = ctk.CTkFrame(upd_box, fg_color="transparent")
+        upd_row.pack(fill="x", padx=12, pady=10)
+        ctk.CTkLabel(upd_row, text=i18n.t("settings.version_now",
+                                          i18n.t("app.version")),
+                     font=ctk.CTkFont(size=12),
+                     text_color=COLOR_TEXT).pack(side="left")
+        ctk.CTkButton(upd_row, text=i18n.t("settings.check_updates"),
+                      width=170, height=30,
+                      font=ctk.CTkFont(size=12, weight="bold"),
+                      fg_color=COLOR_ACCENT, hover_color=COLOR_ACCENT_HOVER,
+                      command=self._check_updates).pack(side="right")
+        self._hint(upd_box, "settings.updates_hint")
+
+        # ---------------------------------------------------------- хранение
+        self._section(wrap, "settings.section_storage")
+        store_box = self._card(wrap)
+        ctk.CTkLabel(store_box, text=self._storage_text(),
+                     font=ctk.CTkFont(size=11), text_color=COLOR_MUTED,
+                     anchor="w", justify="left", wraplength=470
+                     ).pack(fill="x", padx=12, pady=10)
+
+        # ------------------------------------------------------- о программе
+        self._section(wrap, "settings.section_about")
+        about_box = self._card(wrap)
+        ctk.CTkLabel(about_box,
+                     text=i18n.t("settings.about_text", i18n.t("app.version")),
+                     font=ctk.CTkFont(size=11), text_color=COLOR_MUTED,
+                     anchor="w", justify="left", wraplength=470
+                     ).pack(fill="x", padx=12, pady=(10, 4))
+        links = ctk.CTkFrame(about_box, fg_color="transparent")
+        links.pack(fill="x", padx=12, pady=(0, 10))
+        ctk.CTkButton(links, text=i18n.t("settings.open_releases"),
+                      width=170, height=28, fg_color=COLOR_CARD,
+                      hover_color=COLOR_ACCENT,
+                      font=ctk.CTkFont(size=11),
+                      command=lambda: self.app._open_url(updater.RELEASES_URL)
+                      ).pack(side="left")
+        ctk.CTkLabel(links, text=i18n.t("settings.license"),
+                     font=ctk.CTkFont(size=10), text_color=COLOR_MUTED
+                     ).pack(side="left", padx=(10, 0))
+
+        self._center()
+
+    # ------------------------------------------------------------ мелочи
+    def _section(self, parent, key: str, first: bool = False):
+        """Заголовок раздела окна настроек."""
+        ctk.CTkLabel(parent, text=i18n.t(key),
+                     font=ctk.CTkFont(size=12, weight="bold"),
+                     text_color=COLOR_TEXT, anchor="w", height=18
+                     ).pack(fill="x", padx=16,
+                            pady=(14 if first else 8, 2))
+
+    def _card(self, parent):
+        """Рамка одного раздела: карточка на фоне окна."""
+        box = ctk.CTkFrame(parent, fg_color=COLOR_CARD, corner_radius=10)
+        box.pack(fill="x", padx=14, pady=(0, 2))
+        return box
+
+    def _hint(self, parent, key: str):
+        """Пояснение под элементом настройки."""
+        ctk.CTkLabel(parent, text=i18n.t(key),
+                     font=ctk.CTkFont(size=10), text_color=COLOR_MUTED,
+                     anchor="w", justify="left", wraplength=470
+                     ).pack(fill="x", padx=12, pady=(0, 8))
+
+    def _storage_text(self) -> str:
+        """Куда программа пишет настройки — честный ответ, без догадок."""
+        try:
+            if settings.is_portable():
+                return i18n.t("settings.storage_file",
+                              settings._json_path())
+            return i18n.t("settings.storage_registry",
+                          settings.registry_key_path())
+        except Exception:
+            return i18n.t("settings.storage_unknown")
+
+    def _center(self):
+        """Ставит окно по центру главного и делает его модальным."""
+        try:
+            self.update_idletasks()
+            width, height = self.winfo_width(), self.winfo_height()
+            x = self.app.winfo_rootx() + max(
+                0, (self.app.winfo_width() - width) // 2)
+            y = self.app.winfo_rooty() + max(
+                0, (self.app.winfo_height() - height) // 3)
+            self.geometry(f"+{x}+{y}")
+            self.grab_set()
+            self.focus_force()
+        except tk.TclError:
+            # Главное окно могло закрыться — окно настроек просто убираем.
+            pass
+
+    # ---------------------------------------------------------- обработчики
+    def _on_language(self, name: str):
+        """Смена языка: применить к программе и открыть окно заново."""
+        code = i18n.language_code(name)
+        if not code or code == i18n.get_language():
+            return
+        self._close()
+        # Перерисовка интерфейса уничтожает виджеты этого окна, поэтому
+        # его текст на старом языке показывать нельзя — открываем новое.
+        self.app.after(10, lambda: self._switch_language(code))
+
+    def _switch_language(self, code: str):
+        self.app._apply_language(code)
+        self.app._open_settings()
+
+    def _on_scan_only(self):
+        """Режим «только сканирование» запоминается между запусками."""
+        self.app._save_scan_only()
+
+    def _check_updates(self):
+        """Закрывает настройки и запускает проверку обновлений из шапки."""
+        self._close()
+        self.app.after(10, self.app._on_update_chip)
+
+    def _close(self):
+        """Закрывает окно (повторный вызов безопасен)."""
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            self.grab_release()
+        except Exception:
+            pass
+        try:
+            self.destroy()
+        except Exception:
+            pass
+
+
 class CleanerApp(ctk.CTk):
     """Главное окно приложения."""
 
@@ -416,7 +630,7 @@ class CleanerApp(ctk.CTk):
         self.scan_results = {}
         # Режим «только сканирование» живёт дольше одного построения панели:
         # модуль очистки создаётся лениво, а флаг нужен и до его открытия.
-        self.scan_only_var = tk.BooleanVar(value=False)
+        self.scan_only_var = tk.BooleanVar(value=self._load_scan_only())
         self.running = False
         self.stop_event = threading.Event()
         self.msg_queue = queue.Queue()
@@ -445,8 +659,12 @@ class CleanerApp(ctk.CTk):
         self._tab_index = 0           # активная вкладка (для смены языка)
         self.log_box = None           # поле журнала (строится лениво)
         self._log_backlog = []        # строки, накопленные до его открытия
-        self._lang_switch = None      # выпадающий список языков
-        self._lang_label = None       # подпись «Язык» рядом со списком
+        # Плашка проверки обновлений: состояние живёт вне шапки, потому что
+        # шапка пересоздаётся при смене языка, а результат проверки — нет.
+        self.update_chip = None
+        self._update_state = "idle"   # idle | checking | update | current | error
+        self._update_latest = ""      # номер найденной версии, если она новее
+        self._settings_dialog = None  # окно настроек (одно на программу)
         self._total_text = None       # текст «Освобождено…» с учётом режима
         self.winsxs_report = None     # последний отчёт DISM по хранилищу компонентов
         self.winsxs_busy = False      # идёт проверка/очистка WinSxS
@@ -817,6 +1035,18 @@ class CleanerApp(ctk.CTk):
         version.pack(side="left", padx=(10, 0))
         self._bind_header_drag(version)
 
+        # Проверка обновлений. Это единственное место, где программа ходит
+        # в сеть не по своей инициативе, а по нажатию: до клика запроса нет
+        # вовсе. Поэтому плашка выглядит как кнопка, а не как уведомление.
+        self.update_chip = ctk.CTkLabel(left, text=i18n.t("update.chip"),
+                                        font=ctk.CTkFont(size=10, weight="bold"),
+                                        text_color=COLOR_MUTED,
+                                        fg_color=COLOR_CARD_2,
+                                        corner_radius=8, width=104, height=20)
+        self.update_chip.pack(side="left", padx=(6, 0))
+        self.update_chip.bind("<Button-1>", lambda _e: self._on_update_chip())
+        self._sync_update_chip()
+
         # Кнопки окна — у самого правого края, как в обычном окне Windows.
         close_btn = self._window_button(header, "✕", self._on_close,
                                         hover=COLOR_RED, text_color=COLOR_TEXT)
@@ -837,27 +1067,11 @@ class CleanerApp(ctk.CTk):
         self.admin_label.bind("<Button-1>", lambda _e: self._on_admin_chip())
         self._refresh_admin_label()
 
-        # Выпадающий список языка интерфейса (Русский / English).
-        # Названия пишутся эндонимами, поэтому список не «перескакивает»
-        # при смене языка; выбранное значение сразу уходит в реестр.
-        self._lang_label = ctk.CTkLabel(header, text=i18n.t("lang.label"),
-                                        font=ctk.CTkFont(size=11),
-                                        text_color=COLOR_MUTED)
-        self._lang_switch = ctk.CTkComboBox(
-            header,
-            values=i18n.language_values(),
-            command=self._on_language_change,
-            height=28, width=140, font=ctk.CTkFont(size=11),
-            dropdown_font=ctk.CTkFont(size=12),
-            state="readonly",
-            fg_color=COLOR_CARD_2, border_color=COLOR_LINE,
-            button_color=COLOR_CARD_2, button_hover_color=COLOR_ACCENT,
-            dropdown_fg_color=COLOR_CARD_2, dropdown_hover_color=COLOR_ACCENT,
-            dropdown_text_color=COLOR_TEXT, text_color=COLOR_TEXT)
-        # Порядок упаковки: сначала список (он у самого края), затем подпись слева.
-        self._lang_switch.pack(side="right", padx=(0, 8))
-        self._lang_label.pack(side="right", padx=(0, 6))
-        self._sync_lang_switch()
+        # Язык интерфейса переехал в окно настроек: в шапке он дублировал то,
+        # что и так есть за шестерёнкой, и занимал место в единственной строке,
+        # где помещаются только название, версия и кнопки окна.
+        self._window_button(header, "⚙", self._open_settings).pack(
+            side="right", padx=(0, 8), pady=11)
 
         # Тонкая линия под шапкой: ею окно отделено от содержимого — иначе
         # шапка и фон сливаются в одно тёмное поле.
@@ -875,24 +1089,6 @@ class CleanerApp(ctk.CTk):
             font=ctk.CTkFont(size=13, weight="bold"),
             command=command)
 
-    # ------------------------------------------------------ смена языка
-    def _sync_lang_switch(self):
-        """Приводит список языков в соответствие с текущим языком."""
-        if self._lang_switch is None:
-            return
-        try:
-            self._lang_switch.set(i18n.language_name())
-        except Exception:
-            pass
-
-    def _on_language_change(self, name: str):
-        """Обработчик списка: 'Русский' / 'English' -> код языка."""
-        code = i18n.language_code(name)
-        if not code:
-            self._sync_lang_switch()
-            return
-        self._apply_language(code)
-
     def _refresh_admin_label(self):
         """Показывает права администратора на текущем языке (если уже известны)."""
         if self.admin_label is None:
@@ -906,13 +1102,134 @@ class CleanerApp(ctk.CTk):
             self.admin_label.configure(text=i18n.t("admin.chip_no"),
                                        text_color=COLOR_RED)
 
+    # ------------------------------------------------------------- настройки
+    def _open_settings(self):
+        """Открывает окно настроек; второе такое окно не создаётся."""
+        existing = getattr(self, "_settings_dialog", None)
+        try:
+            if existing is not None and existing.winfo_exists():
+                existing.focus_force()
+                return
+        except Exception:
+            pass
+        self._settings_dialog = SettingsDialog(self)
+
+    def _load_scan_only(self) -> bool:
+        """Включён ли режим «только сканирование» — помнится между запусками."""
+        try:
+            return settings.get_settings().get("ScanOnly", "0").strip() == "1"
+        except Exception:
+            return False
+
+    def _save_scan_only(self) -> None:
+        """Запоминает режим «только сканирование» (реестр или settings.json)."""
+        try:
+            settings.get_settings().set(
+                "ScanOnly", "1" if self.scan_only_var.get() else "0")
+        except Exception:
+            pass
+
+    # ------------------------------------------------- проверка обновлений
+    def _sync_update_chip(self):
+        """
+        Приводит плашку обновлений к текущему состоянию.
+
+        Вызывается после каждой перерисовки шапки: при смене языка виджеты
+        создаются заново, а результат уже выполненной проверки должен
+        остаться на месте.
+        """
+        if self.update_chip is None:
+            return
+        state = self._update_state
+        if state == "checking":
+            text, color = i18n.t("update.checking"), COLOR_MUTED
+        elif state == "update":
+            text = i18n.t("update.available",
+                          "v" + (self._update_latest or ""))
+            color = COLOR_MINT
+        elif state == "current":
+            text, color = i18n.t("update.current"), COLOR_MUTED
+        elif state == "error":
+            text, color = i18n.t("update.error"), COLOR_RED
+        else:
+            text, color = i18n.t("update.chip"), COLOR_MUTED
+        try:
+            self.update_chip.configure(text=text, text_color=color)
+        except Exception:
+            pass
+
+    def _on_update_chip(self):
+        """
+        Клик по плашке: проверить обновления и показать результат.
+
+        Плашка только сообщает, что вышла новая версия. Она ничего не
+        скачивает, не открывает и не устанавливает — одно нажатие в шапке
+        не должно приводить к загрузке чего-либо. Страница релизов живёт
+        в настройках, где её открывают осознанно.
+        """
+        if self._update_state == "checking":
+            return
+        self._update_state = "checking"
+        self._update_latest = ""
+        self._sync_update_chip()
+        self._log(i18n.t("update.log_check"))
+        threading.Thread(target=self._update_worker, daemon=True).start()
+
+    def _update_worker(self):
+        """Фоновый поток: один запрос к GitHub, результат — в очередь."""
+        try:
+            payload = updater.check()
+        except Exception as exc:  # pragma: no cover - защита от неожиданностей
+            payload = {"status": updater.STATUS_ERROR, "latest": "",
+                       "current": updater.current_version_text(),
+                       "url": updater.RELEASES_URL, "name": "",
+                       "error": repr(exc)}
+        self.msg_queue.put(("update_result", payload))
+
+    def _on_update_result(self, payload: dict):
+        """Обрабатывает ответ проверки обновлений (в UI-потоке)."""
+        status = payload.get("status")
+        if status == updater.STATUS_UPDATE:
+            self._update_state = "update"
+            self._update_latest = payload.get("latest") or ""
+            self._sync_update_chip()
+            self._log(i18n.t("update.log_available", self._update_latest))
+        elif status == updater.STATUS_CURRENT:
+            self._update_state = "current"
+            self._update_latest = ""
+            self._sync_update_chip()
+            self._log(i18n.t("update.log_current",
+                             payload.get("current") or ""))
+        else:
+            self._update_state = "error"
+            self._update_latest = ""
+            self._sync_update_chip()
+            self._log(i18n.t("update.log_error",
+                             payload.get("error") or "?"))
+
+    @staticmethod
+    def _open_url(url: str):
+        """
+        Открывает ссылку в браузере по умолчанию (через оболочку Windows).
+
+        Принимаются только http/https. ShellExecuteW умеет запускать файлы
+        и обработчики протоколов, поэтому строка, пришедшая извне (например,
+        из ответа GitHub), не должна попадать сюда без проверки схемы.
+        """
+        if not url or not str(url).strip().lower().startswith(("http://", "https://")):
+            return
+        try:
+            ctypes.windll.shell32.ShellExecuteW(
+                None, "open", str(url).strip(), None, None, 1)
+        except Exception:
+            pass
+
     def _apply_language(self, code: str):
         """
         Переключает язык: сохраняет состояние, перерисовывает окно
         и восстанавливает данные (галочки, журнал, результаты поиска).
         """
         if code == i18n.get_language() or self.running:
-            self._sync_lang_switch()
             return
         state = self._capture_ui_state()
         i18n.set_language(code)
@@ -964,8 +1281,6 @@ class CleanerApp(ctk.CTk):
         self.pkg_rows = []
         self.pkg_cells = []
         self.pkg_header = None
-        self._lang_switch = None
-        self._lang_label = None
         # Кнопка разворота пересоздаётся вместе с шапкой.
         self._max_btn = None
         self.opt_os_label = None
@@ -1753,6 +2068,7 @@ class CleanerApp(ctk.CTk):
         # (модуль строится лениво, а состояние нужно уже при смене языка).
         ctk.CTkSwitch(right, text=i18n.t("clean.scan_only"),
                       variable=self.scan_only_var,
+                      command=self._save_scan_only,
                       font=ctk.CTkFont(size=12),
                       text_color=COLOR_MUTED,
                       progress_color=COLOR_ACCENT).pack(anchor="w", padx=14, pady=4)
@@ -2878,7 +3194,6 @@ class CleanerApp(ctk.CTk):
         self.stop_btn.configure(state="normal" if state else "disabled")
         # Пока идёт любая операция, вкладка «Установка» тоже блокируется.
         self._apply_installer_buttons(state)
-        self._set_lang_switch_enabled(not state)
         # Блок WinSxS зависит и от общей занятости, и от своей собственной.
         self._render_winsxs_report()
         # Список крупнейших категорий актуален и до, и после операции.
@@ -2886,17 +3201,6 @@ class CleanerApp(ctk.CTk):
         # Центр сцены и левый рельс показывают то же состояние.
         self._refresh_core()
         self._refresh_telemetry()
-
-    def _set_lang_switch_enabled(self, enabled: bool):
-        """Блокирует переключатель языка на время операций."""
-        if self._lang_switch is None:
-            return
-        try:
-            # Список языков только для чтения: пользователь выбирает из него,
-            # но не может вписать произвольный текст.
-            self._lang_switch.configure(state="readonly" if enabled else "disabled")
-        except Exception:
-            pass
 
     def _update_category_info(self, key: str, text: str):
         widget = self._info_widgets.get(key)
@@ -3099,6 +3403,8 @@ class CleanerApp(ctk.CTk):
                 self.after(200, self._run_diagnose)
             if msg[1]:
                 messagebox.showinfo(i18n.t("dlg.optimization"), msg[1])
+        elif kind == "update_result":
+            self._on_update_result(msg[1] or {})
         elif kind == "diag_report":
             report = msg[1] or {}
             self._render_diag(report)
@@ -4698,8 +5004,10 @@ def _run_task_ps1(ps_body: str):
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             fh.write('$ErrorActionPreference = "Stop"\n' + ps_body)
-        return _run_cmd('powershell -NoProfile -ExecutionPolicy Bypass -File "{}"'
-                        .format(ps_path))
+        # Путь передаётся отдельным элементом списка: без оболочки его не
+        # нужно ни экранировать, ни запирать в кавычки.
+        return _run_cmd([_powershell_exe(), "-NoProfile", "-ExecutionPolicy",
+                         "Bypass", "-File", ps_path])
     finally:
         try:
             os.remove(ps_path)
@@ -4729,10 +5037,33 @@ def _decode_output(raw: bytes) -> str:
     return raw.decode("utf-8", errors="replace")
 
 
-def _run_cmd(cmd: str):
-    """Запускает внешнюю команду и возвращает (код_возврата, вывод)."""
+def _powershell_exe() -> str:
+    """
+    Полный путь к powershell.exe из System32, а не короткое имя из PATH.
+
+    Программа работает с правами администратора, поэтому короткое имя —
+    это дыра: Windows ищет исполняемый файл сначала в текущем каталоге,
+    а потом в PATH, и подложенный туда powershell.exe унаследовал бы
+    повышение прав. core.system_tool() берёт файл из системного каталога.
+    """
+    return core.system_tool("powershell.exe", "WindowsPowerShell", "v1.0")
+
+
+def _run_cmd(argv, timeout: int = 90):
+    """
+    Запускает внешнюю команду и возвращает (код_возврата, вывод).
+
+    Принимает готовый список аргументов: строка команды через оболочку
+    (shell=True) не передаётся никогда — иначе кавычки, пробелы и символы
+    вроде `&` в пути разбирались бы cmd.exe, а не нами.
+    """
+    if isinstance(argv, str):
+        # Совместимость: одиночная команда без аргументов.
+        argv = [argv]
     try:
-        proc = subprocess.run(cmd, shell=True, capture_output=True, timeout=90)
+        proc = subprocess.run(
+            list(argv), shell=False, capture_output=True, timeout=timeout,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         raw = (proc.stdout or b"") + (proc.stderr or b"")
         return proc.returncode, _decode_output(raw)
     except Exception as exc:  # pragma: no cover - исключение запуска
