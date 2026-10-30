@@ -32,6 +32,10 @@ the portable ZIP (unpack it anywhere and run `Swept.exe`; settings stay in that 
 executable (a normal Windows installer with a Start Menu shortcut and a proper uninstaller). What
 changed in each version is listed on the releases page.
 
+> **Something went wrong?** [Open an issue](https://github.com/vladcodex/swept/issues/new/choose) —
+> there are templates for a crash, for a cleanup that took the wrong file, and for anything you
+> want added. The **Log** tab already contains everything needed to reproduce it.
+
 ![Swept — Analyze first, delete later](docs/demo.gif)
 
 *Analyze measures and prints every path it would touch. Nothing is deleted until you press Clean.*
@@ -292,13 +296,27 @@ follows you rather than the folder.
 
 ## Feedback
 
-- **Bugs** → [Issues](https://github.com/vladcodex/swept/issues). Please include what you did, what
-  you expected, what happened instead, your Windows version (e.g. Windows 11 24H2), whether Swept
-  ran as administrator, and the last lines of the **Log** tab — the app never sends anything
-  anywhere, so the log stays on your machine.
-- **Questions and ideas** → [Discussions](https://github.com/vladcodex/swept/discussions), in
-  **Q&A**, **Ideas** or **General**. Keeping bugs in Issues and everything else in Discussions is
-  what keeps the bug list usable.
+Three doors, pick the closest one:
+
+| | Open | Use it when |
+|---|---|---|
+| 🐞 | [Bug report](https://github.com/vladcodex/swept/issues/new?template=bug_report.md) | It crashed, froze, or a button does nothing |
+| 🧹 | [Wrong cleanup](https://github.com/vladcodex/swept/issues/new?template=wrong_cleanup.md) | It deleted a file you needed, or flagged a folder it should have skipped |
+| 💡 | [Feature request](https://github.com/vladcodex/swept/issues/new?template=feature_request.md) | You want something added, changed or removed |
+
+Questions and general talk go to [Discussions](https://github.com/vladcodex/swept/discussions), in
+**Q&A**, **Ideas** or **General**. Bugs in Issues, everything else in Discussions — that is what
+keeps the bug list usable.
+
+What makes a report fixable, in order of usefulness:
+
+1. **The Log tab.** Every deleted or skipped path is written there with a reason. Paste the lines
+   around the problem; a screenshot of the window rarely says enough.
+2. **Your Windows version** (e.g. Windows 11 24H2, build 26100) and whether Swept ran as
+   administrator. Half of the "it does nothing" reports come down to these two lines.
+3. **What you did right before it happened** — which tab, which category, Analyze or Clean.
+
+The app never sends anything anywhere, so the log stays on your machine and you decide what to paste.
 
 ---
 
