@@ -90,9 +90,18 @@ Stated plainly, because this is the list that matters:
   manually and only on one machine.
 * **Windows 10.** Development and testing happen on Windows 11. Windows 10 is supported
   in the sense that the code paths are the same, not in the sense that it is tested.
+* **The Operations log.** Nothing asserts that a path which fails to delete still reaches
+  the log, and nothing checks the 3000-line cap or the backlog behind it.
 
 ## If you find something
 
 The most useful report is a path that gets deleted although it should not.
-Open an issue with the log line — the log names every file it removes — and the category
-that was selected. A reproduction beats a verdict.
+
+Open an issue with the category you had selected, and the lines from the Operations log tab.
+During a clean that log writes every path it removes or refuses, with the full path, so it says
+*what* happened rather than *how much*. It lives in the window: capped at 3000 lines, held in
+memory, not written to a file, and there is no export button. Select the text and copy it.
+
+That missing export is a known annoyance and the log itself has no tests.
+
+A reproduction beats a verdict.
