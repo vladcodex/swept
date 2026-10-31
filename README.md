@@ -280,6 +280,10 @@ assertion cannot delete anything outside `tmp_path`. A few of them are written s
 if a safety check is weakened: the junction-escape test creates a real junction pointing at
 `Documents` and expects the delete path to refuse it.
 
+What is covered, what is checked by hand, and what is not covered at all is written down in
+[TESTING.md](TESTING.md). The list of gaps there is longer than the list of guarantees above,
+and that is deliberate.
+
 ---
 
 ## Requirements
