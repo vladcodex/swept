@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 vladcodex - https://github.com/vladcodex/swept
+# Text and data mining / model training reserved - see NOTICE.
 r"""
 cleaner_update.py — проверка новой версии Swept на GitHub Releases.
 
@@ -22,8 +25,10 @@ cleaner_update.py — проверка новой версии Swept на GitHub
 
 from __future__ import annotations
 
+import functools
 import re
 import urllib.parse
+from typing import Any
 
 REPO = "vladcodex/swept"
 API_URL = "https://api.github.com/repos/{}/releases/latest".format(REPO)
@@ -44,25 +49,36 @@ STATUS_UPDATE = "update"      # вышла версия новее текуще�
 STATUS_CURRENT = "current"    # установлена последняя
 STATUS_ERROR = "error"        # проверить не удалось
 
+# Версия ищется по форме "1.5" / "1.5.0", а не как первые числа подряд:
+# иначе название релиза вида "Release 2024-01-05 v1.5.0" дало бы версию
+# 2024.1.5, и программа объявила бы об обновлении на 2024-й год.
+# Границы (?<![\d.]) и (?![\d.]) не дают выхватить хвост из "1.5.0.1",
+# а необязательная четвёртая группа позволяет такому тегу всё же разобраться
+# (сравниваем только первые три числа).
+_VERSION_RE = re.compile(
+    r"(?<![\d.])(\d{1,4})\.(\d{1,4})(?:\.(\d{1,4}))?(?:\.\d{1,4})?(?![\d.])")
+
 # Запасное значение: используется, если строку версии не удалось прочитать
 # из интерфейсных ресурсов. Должно совпадать с build.py (VERSION).
-FALLBACK_VERSION = (1, 5, 0)
+FALLBACK_VERSION = (1, 5, 1)
 
 
-def parse_version(text) -> tuple:
+def parse_version(text) -> tuple[int, ...]:
     """
     Превращает строку версии в кортеж чисел.
 
     Понимает "v1.5.0", "1.5", "Swept 1.5.0 — new stuff", "1.5.0-beta.2":
-    берутся первые три числа, всё остальное (префиксы, суффиксы, названия)
-    отбрасывается. Пустая строка или текст без цифр дают пустой кортеж —
-    вызывающая сторона обязана это проверить.
+    берётся первое число вида X.Y[.Z], всё остальное (префиксы, суффиксы,
+    даты и номера сборок в названии) отбрасывается. Пустая строка или текст
+    без версии дают пустой кортеж — вызывающая сторона обязана это проверить.
     """
-    numbers = re.findall(r"\d+", str(text or ""))
-    return tuple(int(number) for number in numbers[:3])
+    match = _VERSION_RE.search(str(text or ""))
+    if match is None:
+        return ()
+    return tuple(int(group) for group in match.groups() if group is not None)
 
 
-def _padded(version) -> tuple:
+def _padded(version) -> tuple[int, int, int]:
     """Дополняет кортеж нулями до трёх чисел: (1, 5) -> (1, 5, 0)."""
     return (tuple(version) + (0, 0, 0))[:3]
 
@@ -77,13 +93,17 @@ def is_newer(latest, current) -> bool:
     return _padded(parse_version(latest)) > _padded(parse_version(current))
 
 
-def current_version() -> tuple:
+@functools.lru_cache(maxsize=1)
+def current_version() -> tuple[int, ...]:
     """
     Версия текущей сборки.
 
     Берётся из той же строки, что видна в шапке окна (`app.version`), —
     так номер в интерфейсе и номер, с которым сравнивается релиз, не могут
     разойтись. Если ресурсы недоступны, возвращается FALLBACK_VERSION.
+
+    Значение не меняется за время работы процесса, поэтому кешируется:
+    функция вызывается и при отрисовке плашки, и при сборке User-Agent.
     """
     try:
         from cleaner_i18n import t
@@ -96,7 +116,7 @@ def current_version() -> tuple:
 
 
 def current_version_text() -> str:
-    """Версия текущей сборки строкой: '1.5.0'."""
+    """Версия текущей сборки строкой: '1.5.1'."""
     return ".".join(str(part) for part in current_version())
 
 
@@ -163,20 +183,22 @@ def _fetch_latest_release() -> dict:
         raise RuntimeError("unreadable GitHub response") from exc
 
 
-def check() -> dict:
+def check() -> dict[str, Any]:
     """
     Проверяет, вышла ли версия новее текущей.
 
     Возвращает словарь:
         status  — "update" | "current" | "error"
-        latest  — версия последнего релиза строкой ("1.5.0") или ""
+        latest  — версия последнего релиза строкой ("1.5.1") или ""
         current — версия этой сборки строкой
         url     — страница релиза (открывается в браузере)
         name    — название релиза, как его написал автор
         error   — текст ошибки, если status == "error"
+
+    Функция не бросает исключений: любой сбой — это status == "error".
     """
     current = current_version_text()
-    result = {
+    result: dict[str, Any] = {
         "status": STATUS_ERROR,
         "latest": "",
         "current": current,
@@ -191,6 +213,14 @@ def check() -> dict:
         result["error"] = str(exc) or exc.__class__.__name__
         return result
 
+    # Ответ должен быть объектом. Прокси-заглушка, captive portal или битый
+    # ответ могут вернуть список или строку, и тогда data.get() уронил бы
+    # функцию — а обещано, что наружу выходит только статус ошибки.
+    if not isinstance(data, dict):
+        result["error"] = "unexpected GitHub response: {}".format(
+            type(data).__name__)
+        return result
+
     tag = data.get("tag_name") or data.get("name") or ""
     parsed = parse_version(tag)
     if not parsed:
@@ -198,11 +228,13 @@ def check() -> dict:
         return result
 
     latest = ".".join(str(part) for part in parsed)
-    result["latest"] = latest
-    result["name"] = (data.get("name") or "").strip()
-    result["url"] = safe_url(data.get("html_url"))
-    result["status"] = (STATUS_UPDATE if is_newer(latest, current)
-                        else STATUS_CURRENT)
+    result.update(
+        latest=latest,
+        name=(data.get("name") or "").strip(),
+        url=safe_url(data.get("html_url")),
+        status=(STATUS_UPDATE if is_newer(latest, current)
+                else STATUS_CURRENT),
+    )
     return result
 
 

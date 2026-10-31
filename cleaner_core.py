@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 vladcodex - https://github.com/vladcodex/swept
+# Text and data mining / model training reserved - see NOTICE.
 r"""
 cleaner_core.py — МОДУЛЬ ЛОГИКИ безопасной очистки системы Windows 10/11.
 
@@ -52,6 +55,7 @@ import sys
 import time
 from ctypes import wintypes
 from functools import lru_cache
+from typing import TypedDict
 
 import cleaner_i18n as i18n
 
@@ -1031,7 +1035,20 @@ def get_jobs(key: str, selected=None) -> list:
     return jobs
 
 
-def build_allowed(key: str, selected=None) -> dict:
+class AllowedPaths(TypedDict):
+    """
+    Белый список категории — то, что разрешено удалять.
+
+    Тип описан явно, чтобы опечатка вроде allowed["real_dir"] становилась
+    ошибкой в редакторе, а не KeyError на трёх тысячах файлов.
+    """
+
+    dirs: set
+    files: set
+    real_dirs: dict
+
+
+def build_allowed(key: str, selected=None) -> AllowedPaths:
     """
     Строит БЕЛЫЙ СПИСОК для категории — то, что реально разрешено удалять.
     Возвращает {"dirs": set(), "files": set()} с нормализованными путями.
@@ -1056,7 +1073,7 @@ def build_allowed(key: str, selected=None) -> dict:
     return {"dirs": dirs, "files": files, "real_dirs": real_dirs}
 
 
-def _in_allowed(path: str, allowed: dict) -> bool:
+def _in_allowed(path: str, allowed: AllowedPaths) -> bool:
     """
     Проверяет, входит ли путь в белый список (точный файл или внутри каталога).
 
@@ -1282,7 +1299,7 @@ def scan_categories(keys, on_log=None, on_status=None, stop_event=None,
 # 6. ОЧИСТКА (удаление с перехватом ошибок)
 # =============================================================================
 
-def safe_delete_file(path: str, allowed: dict, dry_run: bool = False) -> str:
+def safe_delete_file(path: str, allowed: AllowedPaths, dry_run: bool = False) -> str:
     """
     Безопасно удаляет ОДИН файл.
 
@@ -1332,7 +1349,8 @@ def safe_delete_file(path: str, allowed: dict, dry_run: bool = False) -> str:
 
 
 def clean_scan_result(result: dict, dry_run: bool = False, on_log=None,
-                      on_progress=None, stop_event=None, allowed: dict | None = None) -> dict:
+                      on_progress=None, stop_event=None,
+                      allowed: AllowedPaths | None = None) -> dict:
     """
     Удаляет то, что было найдено при сканировании (result из scan_category).
 

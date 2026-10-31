@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 vladcodex - https://github.com/vladcodex/swept
+# Text and data mining / model training reserved - see NOTICE.
 r"""
 cleaner_installer.py — безопасная установка игровых лаунчеров без winget.
 

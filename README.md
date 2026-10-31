@@ -337,6 +337,14 @@ responsibility for data loss or system damage.
 [MIT](LICENSE) — free to use, modify and redistribute. The app itself is free, with no paid tier
 and no bundled offers.
 
+**Model training and repackaging.** MIT covers using the code; it does not grant permission to use
+this repository as a training corpus for machine-learning models. That use is reserved under
+[NOTICE](NOTICE), along with the project name and icon. Two honest caveats: the reservation is a
+statement of intent and a paper trail, not a technical barrier — nothing in a public repository can
+technically stop scraping — and releases published before the notice stay under plain MIT, because
+an MIT grant cannot be revoked. The released binaries ship compiled bytecode rather than readable
+sources, which raises the cost of repackaging but does not make it impossible.
+
 ---
 
 *Building from source, the command line and the project layout live in [BUILDING.md](BUILDING.md).*

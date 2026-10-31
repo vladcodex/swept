@@ -1,0 +1,39 @@
+Swept — NOTICE
+==============
+
+Copyright (c) 2026 vladcodex
+https://github.com/vladcodex/swept
+
+
+1. Source code licence
+----------------------
+The source code in this repository is released under the MIT License (see
+LICENSE). That grant is irrevocable for the versions already published under
+it: anyone who received a copy of an earlier release keeps the rights MIT
+gave them.
+
+
+2. Text and data mining, model training
+---------------------------------------
+The author reserves the rights to reproduce and extract the contents of this
+repository for text and data mining, in accordance with Article 4(3) of
+Directive (EU) 2019/790. Collecting this repository as a training corpus for
+machine-learning models is not an authorised use.
+
+This is a reservation of rights over the repository as a body of text, not a
+change to the MIT grant for the code itself. It does not apply to the versions
+published before this notice was added.
+
+
+3. Name, icon and identity
+--------------------------
+"Swept" and the application icon identify this project. A build that the
+author did not publish must not be presented as the official Swept release,
+and a modified version must not be distributed under the same name without
+saying that it was modified.
+
+
+4. Contact
+----------
+Questions about reuse, redistribution, or licensing:
+https://github.com/vladcodex/swept/issues

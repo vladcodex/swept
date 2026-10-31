@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 vladcodex - https://github.com/vladcodex/swept
+# Text and data mining / model training reserved - see NOTICE.
 r"""
 build.py — builds Swept into a single .exe with PyInstaller.
 
@@ -27,7 +30,7 @@ import sys
 BASE = os.path.dirname(os.path.abspath(__file__))
 BUILD_DIR = os.path.join(BASE, ".build")
 APP_NAME = "Swept"
-VERSION = (1, 5, 0, 0)
+VERSION = (1, 5, 1, 0)
 ICON = os.path.join(BASE, "app.ico")
 ENTRY = os.path.join(BASE, "cleaner_gui.py")
 # Имя маркера портативной сборки (должно совпадать с cleaner_settings.PORTABLE_MARKER).
@@ -144,6 +147,12 @@ def main() -> int:
         "--exclude-module", "tkinter.test",
         "--exclude-module", "unittest",
         "--exclude-module", "pydoc_data",
+        # Уровень оптимизации 2 вырезает из байткода докстринги и assert.
+        # Докстринги в этом проекте подробные — они объясняют, зачем каждая
+        # проверка нужна, — и в собранном exe превращаются в готовую карту
+        # для того, кто захочет разобрать бинарь и обойти защиту. В исходниках
+        # они остаются, в поставку не попадают.
+        "--optimize", "2",
     ]
     if os.path.isfile(ICON):
         cmd += ["--icon", ICON]

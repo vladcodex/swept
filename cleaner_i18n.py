@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 vladcodex - https://github.com/vladcodex/swept
+# Text and data mining / model training reserved - see NOTICE.
 r"""
 cleaner_i18n.py — переключение языков интерфейса (русский / английский).
 
@@ -103,7 +106,7 @@ STRINGS = {
 
         # --- оболочка Orbit: модули, рельсы, лента ---
         "app.name": "SWEPT",
-        "app.version": "v1.5.0",
+        "app.version": "v1.5.1",
         "mod.clean": "Очистка",
         "mod.clean.sub": "Категории мусора и кэшей",
         "mod.install": "Установка",
@@ -622,7 +625,7 @@ STRINGS = {
 
         # --- Orbit shell: modules, rails, ribbon ---
         "app.name": "SWEPT",
-        "app.version": "v1.5.0",
+        "app.version": "v1.5.1",
         "mod.clean": "Cleanup",
         "mod.clean.sub": "Junk and cache categories",
         "mod.install": "Install",

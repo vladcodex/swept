@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 vladcodex - https://github.com/vladcodex/swept
+# Text and data mining / model training reserved - see NOTICE.
 r"""
 cleaner_settings.py — ХРАНЕНИЕ НАСТРОЕК ПРОГРАММЫ В РЕЕСТРЕ WINDOWS.
 
@@ -165,17 +168,20 @@ class Settings:
         """Строковая настройка: сначала реестр, потом файл, потом default.
 
         В портативной сборке реестр не используется — только локальный файл.
+        Ключ кеша приводится к нижнему регистру: "Language" и "language" —
+        одна и та же настройка, а не две независимые записи.
         """
-        if name in self._cache:
-            return self._cache[name]
+        cache_key = name.lower()
+        if cache_key in self._cache:
+            return self._cache[cache_key]
         if is_portable():
             # Портативная сборка: настройки живут в settings.json рядом с exe.
             file_data = self._read_file()
             value = file_data.get(name)
             if value is None:
-                value = file_data.get(name.lower())
+                value = file_data.get(cache_key)
             if isinstance(value, str) and value:
-                self._cache[name] = value
+                self._cache[cache_key] = value
                 return value
             return default
         value = self._read_registry(name)
@@ -185,7 +191,7 @@ class Settings:
             # в реестре — "Language", поэтому ищем без учёта регистра.
             file_value = file_data.get(name)
             if file_value is None:
-                file_value = file_data.get(name.lower())
+                file_value = file_data.get(cache_key)
             if isinstance(file_value, str) and file_value:
                 # Переносим старую настройку из файла в реестр (однократно).
                 if self._write_registry(name, file_value):
@@ -194,17 +200,29 @@ class Settings:
                     return file_value
             else:
                 return default
-        self._cache[name] = value
+        self._cache[cache_key] = value
         return value
 
     def set(self, name: str, value: str) -> bool:
-        """Сохраняет настройку: в портативной сборке — файл, иначе реестр→файл."""
-        self._cache[name] = value
+        """Сохраняет настройку: в портативной сборке — файл, иначе реестр→файл.
+
+        Кеш обновляется только после успешной записи. Раньше значение клалось
+        в кеш до записи, и get() отдавал его даже когда ни реестр, ни файл
+        запись не приняли: интерфейс показывал «сохранено», а после
+        перезапуска настройка исчезала.
+        """
         if is_portable():
-            return self._write_file(name, value)
-        if self._write_registry(name, value):
-            return True
-        return self._write_file(name, value)
+            written = self._write_file(name, value)
+        else:
+            written = (self._write_registry(name, value)
+                       or self._write_file(name, value))
+        cache_key = name.lower()
+        if written:
+            self._cache[cache_key] = value
+        else:
+            # Неудачная запись не должна оставлять в кеше призрачное значение.
+            self._cache.pop(cache_key, None)
+        return written
 
     # ---------------------------------------------------------------- язык
     def get_language(self) -> str:
@@ -295,8 +313,12 @@ def get_browser_options(key: str) -> set:
 
 
 def set_browser_options(key: str, options) -> bool:
-    """Сохраняет множество включённых под-опций браузера. True — записано."""
-    opts = set(options)
+    """Сохраняет множество включённых под-опций браузера. True — записано.
+
+    None и пустая последовательность дают одинаковый результат («все галочки
+    сняты»): раньше set(None) падал с TypeError.
+    """
+    opts = {str(item) for item in (options or ())}
     value = ",".join(sorted(opts)) if opts else _BROWSER_OPTS_NONE
     return _settings.set(_BROWSER_OPTS_PREFIX + key, value)
 
