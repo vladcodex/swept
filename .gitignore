@@ -4,6 +4,10 @@ __pycache__/
 *.pyo
 *.pyd
 
+# Tool caches
+.ruff_cache/
+.pytest_cache/
+
 # Build artifacts
 .build/
 build/

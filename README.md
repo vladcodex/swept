@@ -6,6 +6,7 @@
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11-0078D6.svg)](#requirements)
 [![Version](https://img.shields.io/github/v/release/vladcodex/swept?label=version&color=brightgreen)](https://github.com/vladcodex/swept/releases/latest)
 [![UI](https://img.shields.io/badge/UI-EN%20%2F%20RU-lightgrey.svg)](#interface-languages)
+[![tests](https://github.com/vladcodex/swept/actions/workflows/tests.yml/badge.svg)](https://github.com/vladcodex/swept/actions/workflows/tests.yml)
 
 **One window to clean, install and tune Windows 10/11 — safely.**
 
@@ -261,6 +262,23 @@ Swept is built around the assumption that a cleaner must never be able to eat yo
     and it is handled only through `dism.exe` taken from `%SystemRoot%\System32` — the command is an
     argument vector with `shell=False`, `ResetBase` is never passed, and the Clean button is disabled
     unless DISM itself answers "cleanup recommended: Yes".
+
+### How these claims are checked
+
+Every point above is covered by a test suite in `tests/`, not by a promise in this file: the
+whitelist, the blacklist, the reparse-point escape, the personal-folder refusal and the update
+contract each have their own tests, and the suite runs on every push in GitHub Actions.
+
+```bat
+pip install -r requirements-dev.txt
+python -m pytest
+```
+
+The tests build a temporary fake system — their own `%LOCALAPPDATA%`, `%SystemRoot%` and
+`Program Files` — so they never touch the real profile of the machine they run on, and a failing
+assertion cannot delete anything outside `tmp_path`. A few of them are written specifically to fail
+if a safety check is weakened: the junction-escape test creates a real junction pointing at
+`Documents` and expects the delete path to refuse it.
 
 ---
 

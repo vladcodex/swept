@@ -138,6 +138,30 @@ python cleaner_optimize.py --list
 python cleaner_optimize.py --apply telemetry,advertising,search_suggest
 ```
 
+## Tests
+
+The suite covers the parts that must not break: the whitelist, the blacklist, the reparse-point
+escape, the settings store and the update check. It does not need the GUI library and does not touch
+the real system — every test runs against a temporary fake `%LOCALAPPDATA%`, `%SystemRoot%` and
+`Program Files`.
+
+```bat
+pip install -r requirements-dev.txt
+python -m pytest          :: all tests
+python -m pytest -k delete :: only the delete path
+python -m ruff check .    :: lint
+```
+
+Both commands are what CI runs on every push (`.github/workflows/tests.yml`), so a local run that
+passes means the same thing it means on GitHub.
+
+Two notes when adding tests:
+
+- Use the `fake_env` fixture from `tests/conftest.py` instead of the real environment, and call
+  `cleaner_core.reset_protection_cache()` if you change `USERPROFILE` / `SystemRoot` yourself —
+  otherwise the cached protection lists still describe the old paths.
+- Never point a test at a real folder. Everything a test creates belongs in `tmp_path`.
+
 ## Project layout
 
 | File | Purpose |
@@ -150,6 +174,9 @@ python cleaner_optimize.py --apply telemetry,advertising,search_suggest
 | `cleaner_settings.py` | Settings storage: `HKEY_CURRENT_USER\Software\Swept`, JSON fallback |
 | `build.py` | PyInstaller wrapper with icon, version resource and manifest |
 | `installer/setup.iss` | Optional Inno Setup script — a classic Windows installer |
+| `tests/` | pytest suite for the safety model, settings and update check |
+| `ruff.toml`, `pytest.ini` | Lint and test configuration |
+| `requirements-dev.txt` | Test and lint dependencies (not shipped in the build) |
 
 ## How the interface language is stored
 

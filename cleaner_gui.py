@@ -3573,7 +3573,11 @@ class CleanerApp(ctk.CTk):
             colors = ("#dbeafe", "#ffffff", "#dbeafe", "#dbeafe")
         else:
             colors = (COLOR_MUTED, COLOR_TEXT, COLOR_MUTED, COLOR_MUTED)
-        for cell, color in zip(self.pkg_cells[index], colors):
+        # Строка всегда собирается из четырёх ячеек (см. _show_installer_results),
+        # поэтому zip намеренно без strict: если колонок когда-нибудь станет
+        # больше, лишние сохранят текущий цвет вместо того, чтобы уронить
+        # отрисовку списка исключением из обработчика клика.
+        for cell, color in zip(self.pkg_cells[index], colors, strict=False):
             cell.configure(text_color=color)
 
     def _show_installer_results(self, results: list):
