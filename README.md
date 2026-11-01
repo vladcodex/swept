@@ -346,6 +346,10 @@ What makes a report fixable, in order of usefulness:
 
 The app never sends anything anywhere, so the log stays on your machine and you decide what to paste.
 
+If what you found is a way to make Swept delete something outside the folder a category produced,
+that is a security report and not a bug. Do not open a public issue for it — use the private
+advisory form described in [SECURITY.md](SECURITY.md).
+
 ---
 
 ## Disclaimer

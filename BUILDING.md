@@ -65,9 +65,16 @@ copy never ends up in portable mode:
 ```bat
 mkdir .build\portable_stage
 xcopy /E /I dist\Swept .build\portable_stage\Swept
+copy LICENSE .build\portable_stage\Swept\
+copy README.md .build\portable_stage\Swept\
 echo portable> .build\portable_stage\Swept\swept.portable
 :: then zip the Swept folder itself, so the archive root is Swept\
 ```
+
+The two `copy` lines are not optional. The installer puts `LICENSE` and `README.md` next to the
+program, and the MIT licence requires the notice to travel with every copy — the archive is a
+copy. Release 1.5.1 shipped without them, which is the kind of detail someone auditing a
+self-signed binary will notice first.
 
 ## Sign the binaries
 
