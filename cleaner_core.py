@@ -1631,6 +1631,11 @@ def _parse_size(text: str):
     match = _SIZE_RE.search(text or "")
     if not match:
         return None
+    # Знак минус в шаблон не входит, поэтому без этой проверки "-5 GB"
+    # разбиралось бы как положительные 5 ГБ. Отрицательного размера не
+    # бывает: это либо мусор в строке, либо диапазон вида "5-10 GB".
+    if (text or "")[:match.start()].rstrip().endswith(("-", "\u2212")):
+        return None
     try:
         number = float(match.group(1).replace(",", "."))
     except ValueError:
@@ -1726,7 +1731,10 @@ def _run_dism(args, on_line=None, on_progress=None, stop_event=None,
     command = [system_tool("dism.exe")] + list(args)
     encoding = _console_encoding()
     collected = []
-    started = time.time()
+    # monotonic, а не time.time(): перевод системных часов (синхронизация NTP,
+    # переход на летнее время) сдвинул бы разницу в любую сторону — таймаут
+    # либо сработал бы сразу, либо не сработал бы вообще.
+    started = time.monotonic()
 
     try:
         process = subprocess.Popen(
@@ -1764,7 +1772,7 @@ def _run_dism(args, on_line=None, on_progress=None, stop_event=None,
                     except Exception:
                         pass
                     break
-            if time.time() - started > timeout:
+            if time.monotonic() - started > timeout:
                 try:
                     process.kill()
                 except Exception:

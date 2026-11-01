@@ -19,8 +19,9 @@ Free and open source, with a dark interface available in **two languages — Eng
   (24 programs), fetched straight from the vendor's own HTTPS CDN, verified by signature or pinned
   hash, installed silently from an isolated folder.
 - ⚡ **Optimize** — 12 safe Windows tweaks (telemetry, power plan, background apps, Game DVR,
-  widgets…) with a system restore point created before any change, plus a "why is it slow" audit
-  that names the causes with real numbers and measures the effect of every change.
+  widgets…) applied after a system restore point where System Protection is enabled — if it is not,
+  the log says why before anything is changed — plus a "why is it slow" audit that names the causes
+  with real numbers and measures the effect of every change.
 - ⏰ **Schedule** — quiet automatic cleanup: daily or weekly at a chosen time, dry run first,
   a restore point before deletion, and an optional Windows Task Scheduler task that runs Swept
   in the background even when the app is closed.
@@ -59,8 +60,8 @@ portable program with five tabs:
 |---|---|
 | **🧹 Cleanup** | Frees disk space: temp files, browser caches, Windows Update cache, Recycle Bin, logs, dumps and game-launcher junk across 22 categories, including thumbnails, Prefetch, Delivery Optimization, GPU shader cache, Office, Discord and Spotify. Always analyzes before deleting. Also checks and cleans the WinSxS component store with the official DISM commands. |
 | **📦 Install** | A curated catalog of 24 popular programs plus 12 Visual C++ Redistributable packages, fetched from the vendors' own CDNs and verified by signature or pinned hash before anything runs. |
-| **⚡ Optimize** | 12 safe Windows tweaks (telemetry, power plan, background apps, Game DVR, debloat) with a system restore point created before any change, plus a "why is it slow" audit that names the causes with real numbers and measures the effect. |
-| **⏰ Schedule** | Quiet automatic cleanup: daily or weekly, dry run first, restore point before deletion, optionally driven by a Windows Task Scheduler task that runs Swept headless in the background. |
+| **⚡ Optimize** | 12 safe Windows tweaks (telemetry, power plan, background apps, Game DVR, debloat) applied after a restore point where System Protection is on, plus a "why is it slow" audit that names the causes with real numbers and measures the effect. |
+| **⏰ Schedule** | Quiet automatic cleanup: daily or weekly, dry run first, restore point before deletion where System Protection is on, optionally driven by a Windows Task Scheduler task that runs Swept headless in the background. |
 | **📋 Log** | The full history of every deleted file and changed setting, with reasons for everything that was skipped. |
 
 **How it works under the hood:**
@@ -303,6 +304,10 @@ follows you rather than the folder.
 ## Limitations
 
 - Registry tweaks are written directly; Windows may re-apply some of them after a feature update.
+- A restore point is **attempted** before the tweaks and before scheduled deletion, but a failed
+  attempt does not stop the run. Where System Protection is turned off for the system drive,
+  `Checkpoint-Computer` refuses, Swept writes the reason to the log and carries on. If you depend on
+  restore points, check that System Protection is enabled before using the Optimize tab.
 - Recent Windows 11 builds (24H2 and later) protect some shell values — for example `TaskbarDa` and
   `AllowNewsAndInterests` — at the OS level: the key ACL grants full control, yet the write is
   refused. Swept reports such an item as **unavailable on this Windows build** instead of calling it
