@@ -57,7 +57,9 @@ import cleaner_diagnose as diag
 import cleaner_i18n as i18n
 import cleaner_installer as inst
 import cleaner_optimize as opt
+import cleaner_restore as restore
 import cleaner_settings as settings
+import cleaner_tray as tray_mod
 import cleaner_update as updater
 
 # =============================================================================
@@ -588,6 +590,307 @@ class SettingsDialog(ctk.CTkToplevel):
             pass
 
 
+class RollbackDialog(ctk.CTkToplevel):
+    """
+    Окно отката: два независимых слоя возврата в одном месте.
+
+    Зачем вместе: пользователю всё равно, «какой механизм» вернёт систему —
+    ему нужно понять, что можно отменить. Поэтому сверху лежат снимки
+    реестра (наш собственный журнал: точно, быстро, по одному пункту),
+    снизу — точки восстановления Windows (широко, но с перезагрузкой).
+
+    Разница между слоями объясняется текстом, а не догадками пользователя:
+    снимок возвращает конкретные значения, которые менял Swept; точка
+    восстановления откатывает всё, включая чужие установки.
+
+    Тяжёлые операции (PowerShell, powercfg) выполняются в фоновом потоке,
+    результат приходит через очередь главного окна — интерфейс не подвисает.
+    """
+
+    def __init__(self, master):
+        super().__init__(master)
+
+        self.app = master
+        self._closed = False
+        self._points_loading = False
+
+        self.title(i18n.t("undo.title"))
+        self.geometry("760x720")
+        self.minsize(680, 560)
+        self.configure(fg_color=COLOR_BG)
+        self.transient(master)
+        self.protocol("WM_DELETE_WINDOW", self._close)
+
+        wrap = ctk.CTkFrame(self, fg_color=COLOR_CARD_2, corner_radius=12)
+        wrap.pack(fill="both", expand=True, padx=PAD_WRAP, pady=PAD_WRAP)
+
+        # Ряд кнопок внизу забирает своё место сразу — иначе при нехватке
+        # высоты он схлопывается первым.
+        bottom = ctk.CTkFrame(wrap, fg_color="transparent")
+        bottom.pack(fill="x", side="bottom", padx=14, pady=(6, 12))
+        self.status = ctk.CTkLabel(bottom, text="", font=ctk.CTkFont(size=11),
+                                   text_color=COLOR_MUTED, anchor="w")
+        self.status.pack(side="left", fill="x", expand=True)
+        ctk.CTkButton(bottom, text=i18n.t("undo.close"), width=110, height=30,
+                      fg_color=COLOR_CARD, hover_color=COLOR_ACCENT,
+                      command=self._close).pack(side="right")
+
+        # ------------------------------------------------- снимки реестра
+        ctk.CTkLabel(wrap, text=i18n.t("undo.section_reg"),
+                     font=ctk.CTkFont(size=12, weight="bold"),
+                     text_color=COLOR_VIOLET, anchor="w", height=18
+                     ).pack(fill="x", padx=16, pady=(14, 2))
+        ctk.CTkLabel(wrap, text=i18n.t("undo.reg_hint"),
+                     font=ctk.CTkFont(size=10), text_color=COLOR_MUTED,
+                     anchor="w", justify="left", wraplength=690
+                     ).pack(fill="x", padx=16, pady=(0, 6))
+
+        self.reg_box = ctk.CTkScrollableFrame(wrap, fg_color=COLOR_CARD,
+                                              corner_radius=10, height=190)
+        self.reg_box.pack(fill="both", expand=True, padx=14, pady=(0, 4))
+
+        reg_buttons = ctk.CTkFrame(wrap, fg_color="transparent")
+        reg_buttons.pack(fill="x", padx=14, pady=(0, 8))
+        self.undo_all_btn = ctk.CTkButton(
+            reg_buttons, text=i18n.t("undo.btn_all"), width=150, height=30,
+            font=ctk.CTkFont(size=12), fg_color=COLOR_CARD,
+            hover_color=COLOR_WARN, command=self._undo_all)
+        self.undo_all_btn.pack(side="left")
+
+        # ------------------------------------ точки восстановления Windows
+        ctk.CTkLabel(wrap, text=i18n.t("undo.section_rp"),
+                     font=ctk.CTkFont(size=12, weight="bold"),
+                     text_color=COLOR_ACCENT, anchor="w", height=18
+                     ).pack(fill="x", padx=16, pady=(4, 2))
+        ctk.CTkLabel(wrap, text=i18n.t("rp.hint"),
+                     font=ctk.CTkFont(size=10), text_color=COLOR_MUTED,
+                     anchor="w", justify="left", wraplength=690
+                     ).pack(fill="x", padx=16, pady=(0, 6))
+
+        rp_buttons = ctk.CTkFrame(wrap, fg_color="transparent")
+        rp_buttons.pack(fill="x", padx=14, pady=(0, 4))
+        self.rp_status = ctk.CTkLabel(rp_buttons, text="",
+                                      font=ctk.CTkFont(size=11),
+                                      text_color=COLOR_MUTED, anchor="w",
+                                      wraplength=380, justify="left")
+        self.rp_status.pack(side="left", fill="x", expand=True)
+        self.create_btn = ctk.CTkButton(
+            rp_buttons, text=i18n.t("rp.create"), width=130, height=28,
+            font=ctk.CTkFont(size=11), fg_color=COLOR_CARD,
+            hover_color=COLOR_GREEN, command=self._create_point)
+        self.create_btn.pack(side="right")
+        self.refresh_btn = ctk.CTkButton(
+            rp_buttons, text=i18n.t("rp.refresh"), width=100, height=28,
+            font=ctk.CTkFont(size=11), fg_color=COLOR_CARD,
+            hover_color=COLOR_ACCENT, command=self.refresh_points)
+        self.refresh_btn.pack(side="right", padx=(0, 6))
+
+        self.rp_box = ctk.CTkScrollableFrame(wrap, fg_color=COLOR_CARD,
+                                             corner_radius=10, height=170)
+        self.rp_box.pack(fill="both", expand=True, padx=14, pady=(0, 10))
+
+        self._render_registry()
+        self._center()
+        self.refresh_points()
+
+    # ------------------------------------------------------------ мелочи
+    def _center(self):
+        """Ставит окно по центру главного и делает его модальным."""
+        try:
+            self.update_idletasks()
+            width, height = self.winfo_width(), self.winfo_height()
+            x = self.app.winfo_rootx() + max(
+                0, (self.app.winfo_width() - width) // 2)
+            y = self.app.winfo_rooty() + max(
+                0, (self.app.winfo_height() - height) // 3)
+            self.geometry(f"+{x}+{y}")
+            self.grab_set()
+            self.focus_force()
+        except tk.TclError:
+            pass
+
+    def _clear(self, box):
+        """Удаляет строки контейнера перед перерисовкой."""
+        for child in box.winfo_children():
+            child.destroy()
+
+    def _empty_row(self, box, text: str):
+        """Строка-заглушка: «отменять нечего» / «точек нет»."""
+        ctk.CTkLabel(box, text=text, font=ctk.CTkFont(size=11),
+                     text_color=COLOR_MUTED, anchor="w", justify="left",
+                     wraplength=660).pack(fill="x", padx=10, pady=8)
+
+    # ------------------------------------------------- снимки реестра
+    def _render_registry(self):
+        """Перерисовывает список снимков (после отката он меняется)."""
+        self._clear(self.reg_box)
+        snapshot = opt.journal_snapshot()
+        if not snapshot:
+            self._empty_row(self.reg_box, i18n.t("undo.empty"))
+            self.undo_all_btn.configure(state="disabled")
+            return
+        self.undo_all_btn.configure(state="normal")
+        for key, info in snapshot.items():
+            item = opt.get_optimization(key)
+            title = i18n.fld(item, "title") if item else key
+            row = ctk.CTkFrame(self.reg_box, fg_color=COLOR_CARD_2,
+                               corner_radius=8)
+            row.pack(fill="x", padx=4, pady=3)
+            text_box = ctk.CTkFrame(row, fg_color="transparent")
+            text_box.pack(side="left", fill="x", expand=True, padx=10, pady=6)
+            ctk.CTkLabel(text_box, text=title, font=ctk.CTkFont(size=12),
+                         text_color=COLOR_TEXT, anchor="w", justify="left",
+                         wraplength=480).pack(anchor="w")
+            details = i18n.t("undo.values", info.get("count", 0))
+            if info.get("at"):
+                details += " · " + str(info["at"]).replace("T", " ")
+            ctk.CTkLabel(text_box, text=details, font=ctk.CTkFont(size=10),
+                         text_color=COLOR_MUTED, anchor="w").pack(anchor="w")
+            ctk.CTkButton(row, text=i18n.t("undo.btn_item"), width=100,
+                          height=28, font=ctk.CTkFont(size=11),
+                          fg_color=COLOR_CARD, hover_color=COLOR_WARN,
+                          command=lambda k=key: self._undo_item(k)
+                          ).pack(side="right", padx=10)
+
+    def _undo_item(self, key: str):
+        """Откат одного пункта: подтверждение, затем фон."""
+        item = opt.get_optimization(key)
+        title = i18n.fld(item, "title") if item else key
+        if not messagebox.askyesno(i18n.t("undo.title"),
+                                   i18n.t("undo.confirm_item", title)):
+            return
+        self._run_undo([key])
+
+    def _undo_all(self):
+        """Откат всех пунктов, для которых есть снимок."""
+        count = len(opt.journal_snapshot())
+        if not count:
+            return
+        if not messagebox.askyesno(i18n.t("undo.title"),
+                                   i18n.t("undo.confirm_all", count)):
+            return
+        self._run_undo(None)
+
+    def _run_undo(self, keys):
+        """Запускает откат в фоне и сообщает об этом окну и журналу."""
+        self.status.configure(text=i18n.t("undo.busy"))
+        self.app._undo_worker(keys)
+
+    # --------------------------------------------------- точки восстановления
+    def refresh_points(self):
+        """Запрашивает список точек в фоне (PowerShell отвечает не мгновенно)."""
+        if self._points_loading:
+            return
+        self._points_loading = True
+        self._clear(self.rp_box)
+        self._empty_row(self.rp_box, i18n.t("rp.loading"))
+        self.rp_status.configure(text=i18n.t("rp.loading"))
+        self.app._load_restore_points()
+
+    def on_points(self, info: dict):
+        """Показывает полученный список точек (вызывается из главного потока)."""
+        self._points_loading = False
+        if self._closed:
+            return
+        self._clear(self.rp_box)
+        info = info or {}
+        if info.get("disabled"):
+            self.rp_status.configure(text="")
+            self._empty_row(self.rp_box, i18n.t("rp.disabled"))
+            self.create_btn.configure(state="disabled")
+            return
+        if not info.get("ok"):
+            self.rp_status.configure(text="")
+            error = info.get("error") or "—"
+            self._empty_row(self.rp_box, error)
+            # Без прав администратора точки не читаются — кнопку создания
+            # тоже нет смысла оставлять активной.
+            self.create_btn.configure(
+                state="disabled" if info.get("needs_admin") else "normal")
+            return
+        self.create_btn.configure(state="normal")
+        points = info.get("points") or []
+        if not points:
+            self.rp_status.configure(text="")
+            self._empty_row(self.rp_box, i18n.t("rp.empty"))
+            return
+        self.rp_status.configure(text=i18n.t("undo.values", len(points)))
+        admin_ok = bool(core.is_admin())
+        for point in points:
+            row = ctk.CTkFrame(self.rp_box, fg_color=COLOR_CARD_2,
+                               corner_radius=8)
+            row.pack(fill="x", padx=4, pady=3)
+            ctk.CTkLabel(row, text=restore.describe_point(point),
+                         font=ctk.CTkFont(size=11), text_color=COLOR_TEXT,
+                         anchor="w", justify="left", wraplength=520
+                         ).pack(side="left", fill="x", expand=True, padx=10,
+                                pady=6)
+            ctk.CTkButton(row, text=i18n.t("rp.restore"), width=110, height=28,
+                          font=ctk.CTkFont(size=11), fg_color=COLOR_CARD,
+                          hover_color=COLOR_RED,
+                          state="normal" if admin_ok else "disabled",
+                          command=lambda p=point: self._restore_point(p)
+                          ).pack(side="right", padx=10)
+        if not admin_ok:
+            self.status.configure(text=i18n.t("rp.no_admin"))
+
+    def _restore_point(self, point: dict):
+        """Восстановление системы по точке — только после явного подтверждения."""
+        label = restore.describe_point(point)
+        if not messagebox.askyesno(i18n.t("rp.confirm_title"),
+                                   i18n.t("rp.confirm_text", label)):
+            return
+        self.status.configure(text=i18n.t("rp.busy"))
+        self.app._restore_point_worker(point.get("seq"))
+
+    def _create_point(self):
+        """Создание точки восстановления из этого же окна."""
+        self.status.configure(text=i18n.t("opt.restore_running"))
+        self.app._create_restore_point_worker()
+
+    def on_restore_done(self, ok: bool, message: str):
+        """Итог восстановления/создания точки."""
+        if self._closed:
+            return
+        if ok:
+            self.status.configure(text=message or i18n.t("rp.created"))
+            messagebox.showinfo(i18n.t("undo.title"), message or i18n.t("rp.created"))
+            self.refresh_points()
+        else:
+            self.status.configure(text=i18n.t("rp.fail", message or "—"))
+            messagebox.showwarning(i18n.t("undo.title"),
+                                   i18n.t("rp.fail", message or "—"))
+
+    def on_undo_done(self, key, restored: int, failed: int, error: str):
+        """Итог отката: обновляем список снимков и подпись."""
+        if self._closed:
+            return
+        if restored and not failed:
+            text = i18n.t("undo.done", restored)
+        elif restored:
+            text = i18n.t("undo.partial", restored, failed, error or "—")
+        else:
+            text = i18n.t("undo.partial", 0, failed, error or i18n.t("undo.nothing"))
+        self.status.configure(text=text)
+        self._render_registry()
+        self.app._refresh_undo_buttons()
+
+    def _close(self):
+        """Закрывает окно (повторный вызов безопасен)."""
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            self.grab_release()
+        except Exception:
+            pass
+        try:
+            self.destroy()
+        except Exception:
+            pass
+        self.app._rollback_dialog = None
+
+
 class CleanerApp(ctk.CTk):
     """Главное окно приложения."""
 
@@ -712,12 +1015,21 @@ class CleanerApp(ctk.CTk):
         self._weekday_labels = []
         self._weekday_by_label = {}
 
+        # --- Трей и откат ---
+        self._tray = None             # иконка в трее (None — недоступна)
+        self._tray_hint_shown = False # подсказку «свёрнут в трей» показываем раз
+        self._rollback_dialog = None  # окно отката (одно на программу)
+        self._undo_buttons = {}       # {ключ_оптимизации: кнопка «↩» на карточке}
+
         # --- Построение интерфейса ---
         self._build_shell()
         self._center_window()
 
         self.after(100, self._poll_queue)
         self.after(300, self._check_admin_warning)
+        # Трей поднимаем после окна: иконка должна появиться уже у готового
+        # приложения, а не на этапе, когда интерфейс ещё строится.
+        self.after(700, self._start_tray)
 
         # При закрытии окна останавливаем фоновые операции и завершаем работу.
         self.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -936,13 +1248,16 @@ class CleanerApp(ctk.CTk):
         self.geometry(f"+{x}+{y}")
 
     def _minimize_window(self) -> None:
-        """Сворачивает окно в панель задач.
+        """Сворачивает окно: в трей, если он есть, иначе в панель задач.
 
         ``iconify()`` у окна с ``overrideredirect`` падает с TclError
         («override-redirect flag is set»), поэтому просим об этом Windows
-        напрямую: сворачивание и восстановление из панели задач работают
-        как у обычного окна, геометрия сохраняется.
+        напрямую: сворачивание и восстановление работают как у обычного
+        окна, геометрия сохраняется.
         """
+        if self._tray is not None:
+            self._hide_to_tray()
+            return
         hwnd = _window_hwnd(self)
         if hwnd:
             try:
@@ -955,6 +1270,125 @@ class CleanerApp(ctk.CTk):
             self.iconify()
         except tk.TclError:
             pass
+
+    # =============================================================== ТРЕЙ
+    def _tray_labels(self) -> dict:
+        """Подписи меню трея на текущем языке."""
+        return {"open": i18n.t("tray.open"), "clean": i18n.t("tray.clean"),
+                "hide": i18n.t("tray.hide"), "quit": i18n.t("tray.quit")}
+
+    def _tray_tooltip(self) -> str:
+        """Подсказка иконки: свободное место на системном диске.
+
+        Это единственное число, за которым пользователь идёт в трей, поэтому
+        оно обновляется при каждом показе окна и после очистки.
+        """
+        try:
+            drive = os.environ.get("SystemDrive", "C:") + os.sep
+            usage = shutil.disk_usage(drive)
+            return i18n.t("tray.tip", core.format_bytes(usage.free))
+        except Exception:
+            return "Swept"
+
+    def _start_tray(self) -> None:
+        """Создаёт иконку в трее. Недоступность трея — не ошибка."""
+        if self._tray is not None or not tray_mod.available():
+            return
+        icon = _resource_path("app.ico") or ""
+        self._tray = tray_mod.TrayIcon(
+            tooltip=self._tray_tooltip(), icon_path=icon,
+            labels=self._tray_labels(), on_action=self._on_tray_action)
+        if not self._tray.start():
+            self._tray = None
+            self._append_log(i18n.t("tray.unavailable"))
+
+    def _refresh_tray_labels(self) -> None:
+        """Обновляет подписи меню и подсказку (после смены языка и очистки)."""
+        if self._tray is None:
+            return
+        self._tray.set_labels(self._tray_labels())
+        self._tray.set_tooltip(self._tray_tooltip())
+
+    def _on_tray_action(self, action: str) -> None:
+        """Событие трея приходит из его потока — только в очередь.
+
+        Трогать Tk из чужого потока нельзя, поэтому обработка всегда
+        происходит в главном потоке через _poll_queue.
+        """
+        self.msg_queue.put(("tray_action", action))
+
+    def _handle_tray_action(self, action: str) -> None:
+        """Реакция на пункт меню трея."""
+        if action == "open":
+            self._show_from_tray()
+        elif action == "clean":
+            self._tray_quick_clean()
+        elif action == "hide":
+            self._hide_to_tray()
+        elif action == "quit":
+            self._on_close()
+
+    def _show_from_tray(self) -> None:
+        """Возвращает окно из трея на передний план."""
+        hwnd = _window_hwnd(self)
+        if hwnd:
+            try:
+                ctypes.windll.user32.ShowWindow(hwnd, 9)      # SW_RESTORE
+                ctypes.windll.user32.SetForegroundWindow(hwnd)
+                return
+            except Exception:
+                pass
+        try:
+            self.deiconify()
+            self.lift()
+        except Exception:
+            pass
+
+    def _hide_to_tray(self) -> None:
+        """Прячет окно в трей и один раз объясняет, куда оно делось."""
+        if self._tray is None:
+            return
+        hwnd = _window_hwnd(self)
+        if hwnd:
+            try:
+                ctypes.windll.user32.ShowWindow(hwnd, 0)      # SW_HIDE
+            except Exception:
+                return
+        if not self._tray_hint_shown:
+            self._tray_hint_shown = True
+            self._tray.notify(i18n.t("tray.hint_title"),
+                              i18n.t("tray.hint_text"))
+
+    def _tray_quick_clean(self) -> None:
+        """Быстрая очистка из трея: %TEMP% и Корзина, с подтверждением.
+
+        Именно эти две категории — то, что не жалко и что чаще всего занимает
+        место. Полный набор категорий остаётся на вкладке очистки: из меню
+        трея не должно запускаться что-то, чего пользователь не выбирал.
+        """
+        self._show_from_tray()
+        if self.running:
+            return
+        if not messagebox.askyesno(i18n.t("tray.clean_confirm_title"),
+                                   i18n.t("tray.clean_confirm_text")):
+            return
+        self._set_running(True)
+        self.status_label.configure(text=i18n.t("tray.clean"))
+        threading.Thread(target=self._tray_clean_worker, daemon=True).start()
+
+    def _tray_clean_worker(self) -> None:
+        """Фоновая быстрая очистка (без диалогов, только очередь сообщений)."""
+        def log(text):
+            self.msg_queue.put(("log", text))
+        try:
+            keys = ["temp_user", "recycle"]
+            results = core.scan_categories(keys, on_log=log)
+            summary = core.clean_categories(results, dry_run=False, on_log=log)
+            self.msg_queue.put(("tray_cleaned",
+                                core.format_bytes(summary.get("freed", 0))))
+        except Exception as exc:
+            self.msg_queue.put(("tray_cleaned", i18n.t("log.error_text", exc)))
+
 
     def _toggle_maximize(self) -> None:
         if self._maximized:
@@ -1377,6 +1811,9 @@ class CleanerApp(ctk.CTk):
         self.bind("<Escape>", lambda _e: self._show_orbit())
         self._refresh_telemetry()
         self._render_top_categories()
+        # Подписи трея живут вне интерфейса: при смене языка каркас
+        # пересобирается, а иконка остаётся — её меню нужно обновить здесь.
+        self._refresh_tray_labels()
 
     def _build_body(self):
         body = ctk.CTkFrame(self, fg_color="transparent")
@@ -2630,6 +3067,8 @@ class CleanerApp(ctk.CTk):
         parent.grid_columnconfigure(0, weight=0, minsize=400)
         parent.grid_columnconfigure(1, weight=1)
         parent.grid_rowconfigure(0, weight=1)
+        # Кнопки «↩» пересоздаются вместе с карточками.
+        self._undo_buttons = {}
 
         # --- Левая панель: список оптимизаций ---
         panel = ctk.CTkScrollableFrame(parent, fg_color=COLOR_CARD_2, corner_radius=10)
@@ -2674,6 +3113,16 @@ class CleanerApp(ctk.CTk):
                 title_label.pack(side="left", fill="x", expand=True, padx=(6, 0))
                 title_label.bind("<Button-1>",
                                  lambda event, v=var: v.set(not v.get()))
+                # Кнопка отката есть только у пунктов, для которых сохранён
+                # снимок: «отменять» то, что не менялось, нечего.
+                undo_btn = ctk.CTkButton(
+                    top, text=i18n.t("btn.undo_item"), width=26, height=22,
+                    font=ctk.CTkFont(size=11), fg_color=COLOR_CARD_2,
+                    hover_color=COLOR_WARN, corner_radius=6,
+                    command=lambda k=item["key"]: self.on_undo_item(k))
+                self._undo_buttons[item["key"]] = undo_btn
+                if opt.journal_has(item["key"]):
+                    undo_btn.pack(side="right", padx=(4, 0), pady=(1, 0))
                 ctk.CTkLabel(card, text=i18n.fld(item, "desc"),
                              font=ctk.CTkFont(size=11), text_color=COLOR_MUTED,
                              justify="left", anchor="w", wraplength=300
@@ -2687,6 +3136,11 @@ class CleanerApp(ctk.CTk):
         ctk.CTkButton(buttons, text=i18n.t("btn.clear_all"), width=110, height=30,
                       fg_color=COLOR_CARD, hover_color=COLOR_ACCENT,
                       command=lambda: self._set_all_opt(False)).pack(side="left", padx=6)
+
+        ctk.CTkLabel(panel, text=i18n.t("opt.undo_hint"),
+                     font=ctk.CTkFont(size=10), text_color=COLOR_MUTED,
+                     justify="left", anchor="w", wraplength=360
+                     ).pack(anchor="w", padx=10, pady=(0, 8))
 
         # --- Правая панель: разбор системы и управление ---
         right = ctk.CTkFrame(parent, fg_color=COLOR_CARD_2, corner_radius=10)
@@ -2728,6 +3182,17 @@ class CleanerApp(ctk.CTk):
             fg_color=COLOR_CARD, hover_color=COLOR_ACCENT,
             command=self.on_create_restore_point)
         self.opt_restore_btn.pack(fill="x", pady=(8, 0))
+
+        # Откат: снимки реестра и список точек восстановления в одном окне.
+        # Это третья кнопка подряд, поэтому цвет нейтральный: разрушительного
+        # действия здесь нет — только возврат к прежнему состоянию.
+        self.opt_rollback_btn = ctk.CTkButton(
+            btn_frame, text=i18n.t("btn.rollback"), height=34,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=COLOR_CARD, hover_color=COLOR_VIOLET,
+            command=self.on_rollback)
+        self.opt_rollback_btn.pack(fill="x", pady=(8, 0))
+        self._refresh_rollback_button()
 
         self.opt_status = ctk.CTkLabel(right, text=i18n.t("status.ready"),
                                        font=ctk.CTkFont(size=12),
@@ -3029,6 +3494,133 @@ class CleanerApp(ctk.CTk):
     def _selected_opt_keys(self) -> list:
         return [key for key, var in self.opt_vars.items() if var.get()]
 
+    # =============================================================== ОТКАТ
+    def on_rollback(self):
+        """Открывает окно отката: снимки реестра и точки восстановления."""
+        if self._rollback_dialog is not None:
+            try:
+                self._rollback_dialog.focus_force()
+                return
+            except Exception:
+                # Окно могло быть уничтожено при перерисовке интерфейса.
+                self._rollback_dialog = None
+        self._rollback_dialog = RollbackDialog(self)
+
+    def on_undo_item(self, key: str):
+        """Кнопка «↩» на карточке пункта: откат одного пункта."""
+        if self.running:
+            return
+        count = opt.journal_count(key)
+        if not count:
+            messagebox.showinfo(i18n.t("undo.title"), i18n.t("undo.nothing"))
+            return
+        item = opt.get_optimization(key)
+        title = i18n.fld(item, "title") if item else key
+        text = "{}\n\n{}".format(i18n.t("undo.confirm_item", title),
+                                 i18n.t("undo.values", count))
+        if not messagebox.askyesno(i18n.t("undo.title"), text):
+            return
+        self._undo_worker([key])
+
+    def _undo_worker(self, keys):
+        """
+        Фоновый откат.
+
+        keys=None — откатить все пункты со снимком. Реестр отвечает быстро,
+        но powercfg — нет, поэтому работа идёт вне главного потока.
+        """
+        if self.running:
+            return
+        self._set_running(True)
+        self.status_label.configure(text=i18n.t("undo.busy"))
+
+        def log(text):
+            self.msg_queue.put(("log", text))
+
+        def run():
+            restored = failed = 0
+            error = ""
+            try:
+                if keys is None:
+                    result = opt.undo_all(on_log=log)
+                    restored = result["restored"]
+                    failed = result["failed"]
+                    error = result["error"]
+                else:
+                    for key in keys:
+                        done, bad, message = opt.undo_optimization(key, on_log=log)
+                        restored += done
+                        failed += bad
+                        if message:
+                            error = message
+            except Exception as exc:
+                error = repr(exc)
+            self.msg_queue.put(("undo_done", keys, restored, failed, error))
+
+        threading.Thread(target=run, daemon=True).start()
+
+    def _refresh_undo_buttons(self) -> None:
+        """Показывает кнопки «↩» только у пунктов, для которых есть снимок."""
+        for key, button in list(self._undo_buttons.items()):
+            try:
+                if opt.journal_has(key):
+                    button.pack(side="right", padx=(4, 0), pady=(1, 0))
+                else:
+                    button.pack_forget()
+            except Exception:
+                pass
+        self._refresh_rollback_button()
+
+    def _refresh_rollback_button(self) -> None:
+        """Обновляет подпись кнопки отката: сколько пунктов можно вернуть."""
+        button = getattr(self, "opt_rollback_btn", None)
+        if button is None:
+            return
+        count = len(opt.journal_snapshot())
+        text = i18n.t("btn.rollback")
+        if count:
+            text += " · {}".format(count)
+        try:
+            button.configure(text=text)
+        except Exception:
+            pass
+
+    # ------------------------------------------------ точки восстановления
+    def _load_restore_points(self) -> None:
+        """Читает список точек в фоне (PowerShell отвечает не мгновенно)."""
+        def run():
+            try:
+                info = restore.list_restore_points()
+            except Exception as exc:
+                info = {"ok": False, "points": [], "error": repr(exc)}
+            self.msg_queue.put(("rp_loaded", info))
+
+        threading.Thread(target=run, daemon=True).start()
+
+    def _restore_point_worker(self, seq) -> None:
+        """Восстановление системы по точке (перезагружает компьютер)."""
+        def run():
+            try:
+                ok, message = restore.restore_to_point(seq)
+            except Exception as exc:
+                ok, message = False, repr(exc)
+            self.msg_queue.put(("rp_done", ok,
+                                i18n.t("rp.started", seq) if ok else message))
+
+        threading.Thread(target=run, daemon=True).start()
+
+    def _create_restore_point_worker(self) -> None:
+        """Создание точки восстановления из окна отката."""
+        def run():
+            try:
+                ok, message = restore.create_restore_point()
+            except Exception as exc:
+                ok, message = False, repr(exc)
+            self.msg_queue.put(("rp_done", ok,
+                                i18n.t("rp.created") if ok else message))
+
+        threading.Thread(target=run, daemon=True).start()
+
     # ================================================= ВКЛАДКА «ЖУРНАЛ»
     def _build_log_tab(self, parent):
         """Вкладка журнала операций."""
@@ -3089,6 +3681,12 @@ class CleanerApp(ctk.CTk):
 
     def _restart_elevated(self):
         """Перезапускает программу с правами администратора (запрос UAC)."""
+        # Мьютекс единственного экземпляра отдаём ДО запуска новой копии.
+        # Иначе новая (уже повышенная) копия увидит занятый мьютекс, решит
+        # «Swept уже запущен», завершится — и следом закроется эта копия,
+        # оставив пользователя без окна вообще. Если UAC отклонён, мьютекс
+        # забирается обратно: работаем дальше без прав, как раньше.
+        released = core.release_single_instance()
         try:
             if getattr(sys, "frozen", False):
                 exe = sys.executable
@@ -3101,15 +3699,18 @@ class CleanerApp(ctk.CTk):
                 exe = sys.executable
                 entry = sys.argv[0] if sys.argv and sys.argv[0] else __file__
                 params = '"{}"'.format(os.path.abspath(entry))
-            result = ctypes.windll.shell32.ShellExecuteW(
-                None, "runas", exe, params, os.getcwd(), 1)
+            result = _shell_execute_runas(exe, params)
             if result > 32:
                 # Новая копия запущена — эта закрывается.
                 self._on_close()
             else:
                 # Пользователь отказался в UAC: работаем без прав, как раньше.
+                if released:
+                    core.acquire_single_instance()
                 self._log(i18n.t("log.admin_no_2"))
         except Exception as exc:
+            if released:
+                core.acquire_single_instance()
             self._log(i18n.t("log.error") + repr(exc))
 
     def _log(self, text: str):
@@ -3404,8 +4005,45 @@ class CleanerApp(ctk.CTk):
             if getattr(self, "_diag_report", None):
                 self._diag_baseline = int(self._diag_report.get("score") or 0)
                 self.after(200, self._run_diagnose)
+            # После прогона появились (или обновились) снимки — кнопки «↩»
+            # должны это показать, не дожидаясь перерисовки вкладки.
+            self._refresh_undo_buttons()
             if msg[1]:
                 messagebox.showinfo(i18n.t("dlg.optimization"), msg[1])
+        elif kind == "tray_action":
+            self._handle_tray_action(msg[1])
+        elif kind == "tray_cleaned":
+            self._set_running(False)
+            freed = msg[1] or ""
+            self._append_log(i18n.t("tray.cleaned", freed))
+            self.status_label.configure(text=i18n.t("tray.cleaned", freed))
+            if self._tray is not None:
+                self._tray.notify("Swept", i18n.t("tray.cleaned", freed))
+            self._refresh_tray_labels()
+        elif kind == "undo_done":
+            self._set_running(False)
+            keys, restored, failed, error = msg[1], msg[2], msg[3], msg[4]
+            self._refresh_undo_buttons()
+            if restored and not failed:
+                text = i18n.t("undo.done", restored)
+            elif restored:
+                text = i18n.t("undo.partial", restored, failed, error or "—")
+            else:
+                text = i18n.t("undo.partial", 0, failed,
+                              error or i18n.t("undo.nothing"))
+            self.status_label.configure(text=text)
+            # opt_status существует только после сборки вкладки оптимизации.
+            if getattr(self, "opt_status", None) is not None:
+                self.opt_status.configure(text=i18n.t("undo.reboot_hint")
+                                          if restored else text)
+            if self._rollback_dialog is not None:
+                self._rollback_dialog.on_undo_done(keys, restored, failed, error)
+        elif kind == "rp_loaded":
+            if self._rollback_dialog is not None:
+                self._rollback_dialog.on_points(msg[1])
+        elif kind == "rp_done":
+            if self._rollback_dialog is not None:
+                self._rollback_dialog.on_restore_done(msg[1], msg[2])
         elif kind == "update_result":
             self._on_update_result(msg[1] or {})
         elif kind == "diag_report":
@@ -3506,6 +4144,14 @@ class CleanerApp(ctk.CTk):
             self.schedule_stop_event.set()
         except Exception:
             pass
+        # Иконку в трее убираем сами: без этого она остаётся «мёртвой»
+        # до наведения курсора — Windows не всегда замечает смерть процесса.
+        if self._tray is not None:
+            try:
+                self._tray.stop()
+            except Exception:
+                pass
+            self._tray = None
         self.destroy()
 
     # ------------------------------------------- список найденных пакетов
@@ -5056,6 +5702,19 @@ def _powershell_exe() -> str:
     return core.system_tool("powershell.exe", "WindowsPowerShell", "v1.0")
 
 
+def _shell_execute_runas(exe: str, params: str) -> int:
+    """
+    Запускает копию программы с повышением прав через оболочку Windows.
+
+    Возвращает код ShellExecuteW: значение больше 32 означает «запущено»,
+    меньше — ошибку (в том числе отказ пользователя в UAC). Вынесено в
+    отдельную функцию, чтобы путь перезапуска можно было проверить тестом,
+    не поднимая настоящий запрос UAC.
+    """
+    return int(ctypes.windll.shell32.ShellExecuteW(
+        None, "runas", exe, params, os.getcwd(), 1))
+
+
 def _run_cmd(argv, timeout: int = 90):
     """
     Запускает внешнюю команду и возвращает (код_возврата, вывод).
@@ -5119,6 +5778,19 @@ def main():
     # Фоновый режим для автономной задачи Windows (schtasks): без окна, только лог.
     if "--silent-clean" in sys.argv[1:]:
         sys.exit(_silent_clean_headless())
+
+    # Один экземпляр: два окна Swept — это две очистки одного %TEMP%, две
+    # записи в журнал и два планировщика. Второй запуск не работает
+    # параллельно, а поднимает уже открытое окно.
+    first, _handle = core.acquire_single_instance()
+    if not first:
+        # Заголовок зависит от языка, на котором открыто первое окно, —
+        # пробуем оба варианта, не меняя текущий язык процесса.
+        titles = [i18n.STRINGS[code]["app.title"] for code in ("ru", "en")]
+        if not core.focus_window(titles):
+            messagebox.showinfo(i18n.t("app.already_running_title"),
+                                i18n.t("app.already_running"))
+        return
 
     app = CleanerApp()
     app.mainloop()

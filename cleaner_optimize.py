@@ -33,6 +33,7 @@ Windows 10 и Windows 11. Цель — слегка ускорить систе�
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
@@ -43,6 +44,7 @@ except ImportError:  # pragma: no cover - не Windows
     winreg = None
 
 import cleaner_i18n as i18n
+import cleaner_settings as settings
 from cleaner_core import is_admin, system_tool
 
 # Флаг: не показывать чёрное окно консоли (Windows).
@@ -134,8 +136,338 @@ def _denied_in_text(text: str) -> bool:
     return any(marker in lowered for marker in _ACCESS_DENIED_MARKERS)
 
 
+# ---------------------------------------------------------------------------
+# Журнал снимков: что было до правки
+# ---------------------------------------------------------------------------
+# Идея простая: перед каждой записью в реестр (и перед вызовом powercfg)
+# сохраняем ПРЕЖНЕЕ состояние. Тогда «отменить» — это не догадка о том, какие
+# ключи трогал Swept, а точное возвращение значений, которые стояли до него.
+#
+# Почему не «откат к умолчаниям Windows»: умолчания зависят от сборки,
+# редакции и политик, а прежнее значение известно точно. Второе важнее
+# аккуратности формулировок — пользователь ждёт свои настройки, а не «как
+# было у всех».
+#
+# Снимок хранится в настройках приложения (реестр HKCU или settings.json
+# в портативной сборке) одной JSON-строкой: отдельный файл пришлось бы
+# чистить, переносить и объяснять пользователю.
+JOURNAL_SETTING = "TweakJournal"
+# Потолок на количество записей: строка в реестре не должна расти бесконечно,
+# если человек жмёт «Применить» годами. При переполнении журнал обрезается
+# по самым старым пунктам.
+JOURNAL_MAX_KEYS = 64
+
+# Активный сбор: {"key": ..., "entries": [...]} или None, когда не собираем.
+_journal: dict | None = None
+_journal_key: str | None = None
+
+_HIVE_NAMES = {}
+_HIVE_BY_NAME = {}
+
+
+def _init_hives() -> None:
+    """Заполняет таблицу соответствия «ветка реестра <-> её имя в JSON»."""
+    if winreg is None or _HIVE_NAMES:
+        return
+    _HIVE_NAMES.update({
+        winreg.HKEY_CURRENT_USER: "HKCU",
+        winreg.HKEY_LOCAL_MACHINE: "HKLM",
+        winreg.HKEY_CLASSES_ROOT: "HKCR",
+        winreg.HKEY_USERS: "HKU",
+    })
+    _HIVE_BY_NAME.update({name: hive for hive, name in _HIVE_NAMES.items()})
+
+
+def _hive_name(hive) -> str:
+    """Имя ветки для хранения в JSON (HKCU / HKLM / …)."""
+    _init_hives()
+    return _HIVE_NAMES.get(hive, "")
+
+
+def _hive_from_name(name: str):
+    """Ветка реестра по имени из JSON. None — имя неизвестно."""
+    _init_hives()
+    return _HIVE_BY_NAME.get(name)
+
+
+def _encode_value(value):
+    """Готовит значение реестра к записи в JSON (bytes -> base64-строка)."""
+    if isinstance(value, (bytes, bytearray)):
+        import base64
+        return {"__bytes__": base64.b64encode(bytes(value)).decode("ascii")}
+    if isinstance(value, (list, tuple)):
+        return [str(item) for item in value]
+    return value
+
+
+def _decode_value(value):
+    """Обратное преобразование к виду, который принимает winreg."""
+    if isinstance(value, dict) and "__bytes__" in value:
+        import base64
+        return base64.b64decode(value["__bytes__"])
+    if isinstance(value, list):
+        return list(value)
+    return value
+
+
+def _read_value(hive, path: str, name: str):
+    """
+    Читает текущее значение. Возвращает (exists, value, vtype).
+
+    exists=False — значения нет (это тоже состояние: откат должен его удалить).
+    exists=None — прочитать не удалось; откатывать такое значение нельзя,
+    и об этом честно сообщается, а не подставляется «наверное, ноль».
+    """
+    if winreg is None:
+        return None, None, None
+    try:
+        with winreg.OpenKey(hive, path, 0, winreg.KEY_READ) as key:
+            value, vtype = winreg.QueryValueEx(key, name)
+        return True, value, vtype
+    except FileNotFoundError:
+        return False, None, None
+    except OSError:
+        return None, None, None
+
+
+def _journal_add(entry: dict) -> None:
+    """Добавляет запись в активный снимок (если сбор вообще идёт)."""
+    if _journal is None or not _journal_key:
+        return
+    _journal.setdefault(_journal_key, []).append(entry)
+
+
+def _journal_load() -> dict:
+    """Читает журнал снимков из настроек. Битые данные — пустой журнал."""
+    import json
+    try:
+        raw = settings.get_settings().get(JOURNAL_SETTING, "")
+    except Exception:
+        return {}
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+    except (ValueError, TypeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _journal_save(data: dict) -> bool:
+    """Пишет журнал в настройки. True — запись удалась."""
+    import json
+    # Обрезаем самые старые пункты, если журнал разросся: ключи в JSON
+    # хранятся в порядке добавления, поэтому «старые» — это первые.
+    if len(data) > JOURNAL_MAX_KEYS:
+        for stale in list(data)[:len(data) - JOURNAL_MAX_KEYS]:
+            data.pop(stale, None)
+    try:
+        return settings.get_settings().set(
+            JOURNAL_SETTING, json.dumps(data, ensure_ascii=False))
+    except Exception:
+        return False
+
+
+def _journal_begin(key: str) -> None:
+    """
+    Начинает сбор снимка для пункта `key`.
+
+    Если для пункта снимок уже есть — сбор не начинается. Это принципиально:
+    повторное «Применить» не должно затирать исходное состояние значением,
+    которое поставил сам Swept, иначе откат вернёт пользователя в середину
+    процесса, а не туда, где он был до программы.
+    """
+    global _journal, _journal_key
+    if winreg is None:
+        _journal, _journal_key = None, None
+        return
+    existing = _journal_load()
+    if key in existing:
+        _journal, _journal_key = None, None
+        return
+    _journal, _journal_key = existing, key
+
+
+def _journal_end() -> None:
+    """Завершает сбор и сохраняет его, если появились новые записи."""
+    global _journal, _journal_key
+    if _journal is not None and _journal_key and _journal.get(_journal_key):
+        import datetime
+        _journal.setdefault("__meta__", {})
+        if isinstance(_journal.get("__meta__"), dict):
+            _journal["__meta__"][_journal_key] = datetime.datetime.now().isoformat(
+                timespec="seconds")
+        _journal_save(_journal)
+    _journal, _journal_key = None, None
+
+
+def journal_snapshot() -> dict:
+    """
+    Снимки в удобном для интерфейса виде: {key: {"count": N, "at": "..."}}.
+
+    Служебный ключ __meta__ (даты) в результат не попадает.
+    """
+    data = _journal_load()
+    meta = data.get("__meta__") if isinstance(data.get("__meta__"), dict) else {}
+    result = {}
+    for key, entries in data.items():
+        if key == "__meta__" or not isinstance(entries, list) or not entries:
+            continue
+        result[key] = {"count": len(entries), "at": meta.get(key, "")}
+    return result
+
+
+def journal_has(key: str) -> bool:
+    """True, если для пункта есть снимок (его можно отменить)."""
+    return bool(journal_snapshot().get(key))
+
+
+def journal_count(key: str) -> int:
+    """Сколько значений сохранено для пункта."""
+    return int(journal_snapshot().get(key, {}).get("count") or 0)
+
+
+def journal_clear(key: str | None = None) -> bool:
+    """Забывает снимок одного пункта (key=None — весь журнал)."""
+    data = _journal_load()
+    if key is None:
+        return _journal_save({})
+    data.pop(key, None)
+    meta = data.get("__meta__")
+    if isinstance(meta, dict):
+        meta.pop(key, None)
+        if not meta:
+            data.pop("__meta__", None)
+    return _journal_save(data)
+
+
+def _undo_reg_entry(entry: dict) -> tuple[bool, str]:
+    """Возвращает одно значение реестра к прежнему состоянию."""
+    hive = _hive_from_name(str(entry.get("hive") or ""))
+    path = str(entry.get("path") or "")
+    name = str(entry.get("name") or "")
+    if hive is None or not path or not name:
+        return False, "bad entry"
+    exists = entry.get("exists")
+    if exists is None:
+        return False, i18n.t("undo.no_admin")
+    try:
+        if exists:
+            vtype = int(entry.get("type") or winreg.REG_DWORD)
+            value = _decode_value(entry.get("value"))
+            with winreg.CreateKeyEx(hive, path, 0, winreg.KEY_SET_VALUE) as key:
+                winreg.SetValueEx(key, name, 0, vtype, value)
+        else:
+            try:
+                with winreg.OpenKey(hive, path, 0, winreg.KEY_SET_VALUE) as key:
+                    winreg.DeleteValue(key, name)
+            except FileNotFoundError:
+                # Значения уже нет — цель отката достигнута.
+                return True, ""
+        return True, ""
+    except PermissionError:
+        return False, _permission_message()
+    except OSError as exc:
+        return False, str(exc)
+
+
+def _undo_util_entry(entry: dict) -> tuple[bool, str]:
+    """Откат изменений, сделанных штатной утилитой (powercfg)."""
+    kind = entry.get("kind")
+    powercfg = system_tool("powercfg.exe")
+    if kind == "power":
+        prev = str(entry.get("prev") or "")
+        # GUID проверяем шаблоном: аргумент уходит в командную строку,
+        # и «просто строка из JSON» там недопустима.
+        if not re.match(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-"
+                        r"[0-9a-f]{4}-[0-9a-f]{12}$", prev):
+            return False, "bad scheme guid"
+        code, out = _run([powercfg, "/setactive", prev])
+        return _util_result(code, out)
+    if kind == "hibernate":
+        if not entry.get("prev"):
+            # Гибернация была выключена до нас — возвращать нечего.
+            return True, ""
+        code, out = _run([powercfg, "/h", "on"])
+        return _util_result(code, out)
+    return False, "unknown entry"
+
+
+def undo_optimization(key: str, on_log=None) -> tuple[int, int, str]:
+    """
+    Откатывает один пункт оптимизации.
+
+    Возвращает (возвращено, не удалось, последняя_ошибка). Успешно
+    возвращённые записи из журнала удаляются: повторный откат не должен
+    пытаться вернуть то, что уже вернули.
+    """
+    data = _journal_load()
+    entries = data.get(key)
+    if not isinstance(entries, list) or not entries:
+        return 0, 0, i18n.t("undo.nothing")
+    if on_log:
+        on_log(i18n.t("log.undo_start", i18n.fld(get_optimization(key) or {},
+                                                 "title"), len(entries)))
+    restored, failed, last_error, left = 0, 0, "", []
+    # Обратный порядок: если один и тот же ключ писали дважды, последняя
+    # запись описывает состояние непосредственно перед нами.
+    for entry in reversed(entries):
+        if entry.get("kind") == "reg":
+            ok, msg = _undo_reg_entry(entry)
+        else:
+            ok, msg = _undo_util_entry(entry)
+        if ok:
+            restored += 1
+        else:
+            failed += 1
+            last_error = msg or last_error
+            left.append(entry)
+    if restored:
+        if left:
+            data[key] = list(reversed(left))
+        else:
+            data.pop(key, None)
+            meta = data.get("__meta__")
+            if isinstance(meta, dict):
+                meta.pop(key, None)
+        _journal_save(data)
+    if on_log:
+        if restored:
+            on_log(i18n.t("log.undo_ok", restored))
+        if failed:
+            on_log(i18n.t("log.undo_error", last_error or "—"))
+    return restored, failed, last_error
+
+
+def undo_all(on_log=None) -> dict:
+    """
+    Откатывает все пункты, для которых есть снимок.
+
+    Возвращает {"restored": N, "failed": M, "keys": [...], "error": "..."}.
+    """
+    result = {"restored": 0, "failed": 0, "keys": [], "error": ""}
+    for key in list(journal_snapshot()):
+        restored, failed, error = undo_optimization(key, on_log=on_log)
+        result["restored"] += restored
+        result["failed"] += failed
+        if error:
+            result["error"] = error
+        if restored:
+            result["keys"].append(key)
+    return result
+
+
 def _reg_write(hive, path, name, value, vtype=winreg.REG_DWORD):
     """Пишет значение в реестр. Возвращает (ok, message)."""
+    # Снимок делается ДО записи: после неё прежнее значение уже потеряно.
+    if _journal is not None and _journal_key:
+        exists, old_value, old_type = _read_value(hive, path, name)
+        _journal_add({
+            "kind": "reg", "hive": _hive_name(hive), "path": path, "name": name,
+            "exists": exists,
+            "value": _encode_value(old_value) if exists else None,
+            "type": old_type,
+        })
     try:
         with winreg.CreateKeyEx(hive, path, 0, winreg.KEY_SET_VALUE) as key:
             winreg.SetValueEx(key, name, 0, vtype, value)
@@ -265,6 +597,13 @@ def _opt_power():
     code, _out = _run([powercfg, "/list"])
     if code != 0:
         return False, i18n.t("opt.power_list_fail")
+    # Запоминаем ТЕКУЩУЮ схему: «отменить» должна вернуть её, а не
+    # «сбалансированную» — у пользователя могла быть своя схема.
+    code_cur, out_cur = _run([powercfg, "/getactivescheme"])
+    if code_cur == 0:
+        match_cur = re.search(r"([0-9a-fA-F]{8}-[0-9a-fA-F-]{27})", out_cur)
+        if match_cur:
+            _journal_add({"kind": "power", "prev": match_cur.group(1).lower()})
     if high_perf.lower() in _out.lower():
         code2, out2 = _run([powercfg, "/setactive", high_perf])
     else:
@@ -277,6 +616,12 @@ def _opt_power():
 
 def _opt_hibernate():
     """(admin) Отключить гибернацию, освободив место (обратимо: powercfg /h on)."""
+    # Была ли гибернация включена, решает hiberfil.sys: именно этот файл
+    # исчезает при /h off. Без этой отметки откат включал бы гибернацию
+    # даже тем, у кого она изначально была выключена.
+    hiber = os.path.join(os.environ.get("SystemDrive", "C:") + os.sep,
+                         "hiberfil.sys")
+    _journal_add({"kind": "hibernate", "prev": os.path.exists(hiber)})
     code, out = _run([system_tool("powercfg.exe"), "/h", "off"])
     return _util_result(code, out)
 
@@ -419,8 +764,10 @@ def _opt_wer():
 
 # Список оптимизаций для интерфейса:
 #   key, title/title_en, desc/desc_en, group, admin, apply (безопасная настройка).
-# Обратимость обеспечивается точкой восстановления системы, которая создаётся
-# перед применением, — отдельного программного отката здесь нет.
+# Обратимость двойная: перед применением создаётся точка восстановления
+# системы, а каждая запись в реестр и каждый вызов powercfg попадают в журнал
+# снимков (см. блок «Журнал снимков» выше) — поэтому пункт можно отменить
+# поштучно, не откатывая всю систему.
 OPTIMIZATIONS = [
     {
         "key": "telemetry",
@@ -697,10 +1044,16 @@ def _run_items(items, on_log=None, on_status=None, stop_event=None,
                           i18n.fld(item, "title"),
                           i18n.t("opt.admin_suffix") if item["admin"] else ""))
         action = item["apply"]
+        # Снимок прежних значений собирается вокруг самого действия: всё, что
+        # пункт успел записать, попадёт в журнал — включая частичный результат
+        # упавшего пункта, иначе такие правки нельзя было бы вернуть.
+        _journal_begin(key)
         try:
             ok, msg = action()
         except Exception as exc:
             ok, msg = False, repr(exc)
+        finally:
+            _journal_end()
         if ok:
             kind = "done"
             stats["done"].append(key)
@@ -768,6 +1121,12 @@ def main(argv=None):
     parser.add_argument("--apply", metavar="KEYS",
                         help="применить пункты через запятую (например: telemetry,advertising)")
     parser.add_argument("--all", action="store_true", help="применить все пункты")
+    parser.add_argument("--journal", action="store_true",
+                        help="показать снимки: какие пункты можно отменить")
+    parser.add_argument("--undo", metavar="KEYS",
+                        help="отменить пункты через запятую (вернуть прежние значения)")
+    parser.add_argument("--undo-all", action="store_true",
+                        help="отменить все пункты, для которых есть снимок")
     args = parser.parse_args(argv)
 
     info = get_windows_info()
@@ -780,6 +1139,41 @@ def main(argv=None):
                 item["key"], "админ" if item["admin"] else "польз.",
                 item["title"]))
         return 0
+
+    if args.journal:
+        snapshot = journal_snapshot()
+        if not snapshot:
+            print("Снимков нет — откатывать нечего.")
+            return 0
+        for key, info_snap in snapshot.items():
+            item = get_optimization(key)
+            title = item["title"] if item else key
+            print("  {:<16} {:>3} знач.  {}  {}".format(
+                key, info_snap["count"], info_snap.get("at") or "—", title))
+        return 0
+
+    if args.undo or args.undo_all:
+        if args.undo_all:
+            keys = list(journal_snapshot())
+        else:
+            raw = [k.strip() for k in args.undo.split(",") if k.strip()]
+            keys = [k for k in raw if journal_has(k)]
+            missing = [k for k in raw if not journal_has(k)]
+            if missing:
+                print("Нет снимка (пропущены): " + ", ".join(missing))
+        if not keys:
+            print("Нечего отменять.")
+            return 2
+        total_restored = total_failed = 0
+        for key in keys:
+            restored, failed, error = undo_optimization(key, on_log=print)
+            total_restored += restored
+            total_failed += failed
+            if error and failed:
+                print("  [{}] {}".format(key, error))
+        print("\nВозвращено значений: {} | не удалось: {}".format(
+            total_restored, total_failed))
+        return 0 if not total_failed else 1
 
     if args.apply or args.all:
         if args.all:

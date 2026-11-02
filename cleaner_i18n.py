@@ -106,7 +106,7 @@ STRINGS = {
 
         # --- оболочка Orbit: модули, рельсы, лента ---
         "app.name": "SWEPT",
-        "app.version": "v1.5.1",
+        "app.version": "v1.5.2",
         "mod.clean": "Очистка",
         "mod.clean.sub": "Категории мусора и кэшей",
         "mod.install": "Установка",
@@ -346,6 +346,77 @@ STRINGS = {
         "opt.restore_skip": "Точка восстановления не создана: {}",
         "opt.restore_skip_no_admin": "Без прав администратора точку восстановления создать нельзя — пропускаем.",
         "opt.restore_fail": "Не удалось создать точку восстановления",
+        "opt.undo_hint": "Кнопка ↩ возвращает прежнее значение: Swept сохранил его "
+                         "перед правкой.",
+        "btn.rollback": "↩  Откат изменений",
+        "btn.undo_item": "↩",
+
+        # ------------------------------------------- откат: снимки реестра
+        "undo.title": "Откат изменений",
+        "undo.section_reg": "СНИМКИ РЕЕСТРА",
+        "undo.section_rp": "ТОЧКИ ВОССТАНОВЛЕНИЯ WINDOWS",
+        "undo.reg_hint": "Перед каждой правкой Swept сохранял прежнее значение. "
+                         "Здесь видно, что можно вернуть — и куда.",
+        "undo.empty": "Изменений нет — откатывать нечего.",
+        "undo.values": "{} значений",
+        "undo.btn_item": "Отменить",
+        "undo.btn_all": "Отменить всё",
+        "undo.confirm_item": "Вернуть прежние значения для «{}»?",
+        "undo.confirm_all": "Вернуть прежние значения для всех пунктов ({} шт.)?",
+        "undo.done": "Возвращено значений: {}",
+        "undo.partial": "Возвращено {}, не удалось {}: {}",
+        "undo.nothing": "Для этого пункта нет снимка.",
+        "undo.reboot_hint": "Часть настроек вступит в силу после перезапуска "
+                            "проводника или Windows.",
+        "undo.no_admin": "Для отката нужны права администратора.",
+        "undo.busy": "Откатываю…",
+        "undo.close": "Закрыть",
+        "log.undo_start": "Откат «{}»: {} значений",
+        "log.undo_ok": "Возвращено значений: {}",
+        "log.undo_error": "Ошибка отката: {}",
+
+        # --------------------------------------- откат: точки восстановления
+        "rp.title": "Точки восстановления",
+        "rp.hint": "Список точек, созданных Windows. Восстановление откатывает "
+                   "систему, драйверы и программы к выбранной точке "
+                   "и перезагружает компьютер.",
+        "rp.loading": "Читаю список точек…",
+        "rp.empty": "Точек восстановления нет.",
+        "rp.disabled": "Защита системы выключена для системного диска — Windows "
+                       "не создаёт точки. Включается в «Панель управления → "
+                       "Восстановление».",
+        "rp.seq": "точка №{}",
+        "rp.restore": "Восстановить",
+        "rp.create": "Создать точку",
+        "rp.refresh": "Обновить",
+        "rp.confirm_title": "Восстановление системы",
+        "rp.confirm_text": "Восстановить систему по точке «{}»?\n\n"
+                           "Windows перезагрузится, а изменения после этой точки "
+                           "будут потеряны. Сохраните работу.",
+        "rp.started": "Восстановление запущено (точка №{}). Компьютер "
+                      "перезагрузится.",
+        "rp.fail": "Не удалось восстановить: {}",
+        "rp.created": "Точка восстановления создана.",
+        "rp.create_fail": "Точка не создана: {}",
+        "rp.no_admin": "Нужны права администратора.",
+        "rp.busy": "Выполняется…",
+
+        # ----------------------------------------------------------- трей
+        "tray.open": "Открыть Swept",
+        "tray.clean": "Очистить %TEMP% и корзину",
+        "tray.hide": "Свернуть в трей",
+        "tray.quit": "Выход",
+        "tray.tip": "Swept · свободно {}",
+        "tray.hint_title": "Swept свёрнут в трей",
+        "tray.hint_text": "Программа работает. Двойной клик по иконке вернёт окно.",
+        "tray.clean_confirm_title": "Быстрая очистка",
+        "tray.clean_confirm_text": "Очистить %TEMP% и Корзину? Файлы будут "
+                                   "удалены без возможности отмены.",
+        "tray.cleaned": "Очищено: {}",
+        "tray.unavailable": "Трей недоступен в этой системе.",
+        "app.already_running_title": "Swept уже запущен",
+        "app.already_running": "Окно программы уже открыто — оно поднято "
+                               "на передний план.",
 
         # --------------------------------------------- разбор «почему тормозит»
         "diag.title": "РАЗБОР: ПОЧЕМУ ТОРМОЗИТ",
@@ -625,7 +696,7 @@ STRINGS = {
 
         # --- Orbit shell: modules, rails, ribbon ---
         "app.name": "SWEPT",
-        "app.version": "v1.5.1",
+        "app.version": "v1.5.2",
         "mod.clean": "Cleanup",
         "mod.clean.sub": "Junk and cache categories",
         "mod.install": "Install",
@@ -865,6 +936,77 @@ STRINGS = {
         "opt.restore_skip": "Restore point not created: {}",
         "opt.restore_skip_no_admin": "Without administrator rights a restore point cannot be created — skipping.",
         "opt.restore_fail": "Failed to create a restore point",
+        "opt.undo_hint": "The ↩ button restores the previous value: Swept saved "
+                         "it before the change.",
+        "btn.rollback": "↩  Roll back changes",
+        "btn.undo_item": "↩",
+
+        # -------------------------------------- rollback: registry snapshots
+        "undo.title": "Roll back changes",
+        "undo.section_reg": "REGISTRY SNAPSHOTS",
+        "undo.section_rp": "WINDOWS RESTORE POINTS",
+        "undo.reg_hint": "Before every change Swept saved the previous value. "
+                         "Here you can see what can be restored — and to what.",
+        "undo.empty": "No changes recorded — nothing to roll back.",
+        "undo.values": "{} values",
+        "undo.btn_item": "Undo",
+        "undo.btn_all": "Undo all",
+        "undo.confirm_item": "Restore the previous values for “{}”?",
+        "undo.confirm_all": "Restore the previous values for all items ({})?",
+        "undo.done": "Values restored: {}",
+        "undo.partial": "Restored {}, failed {}: {}",
+        "undo.nothing": "There is no snapshot for this item.",
+        "undo.reboot_hint": "Some settings take effect after Explorer or "
+                            "Windows restarts.",
+        "undo.no_admin": "Rolling back requires administrator rights.",
+        "undo.busy": "Rolling back…",
+        "undo.close": "Close",
+        "log.undo_start": "Rolling back “{}”: {} values",
+        "log.undo_ok": "Values restored: {}",
+        "log.undo_error": "Rollback error: {}",
+
+        # ------------------------------------ rollback: restore points
+        "rp.title": "Restore points",
+        "rp.hint": "Points created by Windows. Restoring rolls the system, "
+                   "drivers and programs back to the chosen point and reboots "
+                   "the computer.",
+        "rp.loading": "Reading the list of points…",
+        "rp.empty": "No restore points.",
+        "rp.disabled": "System Protection is off for the system drive — Windows "
+                       "creates no points. Turn it on in Control Panel → "
+                       "Recovery.",
+        "rp.seq": "point #{}",
+        "rp.restore": "Restore",
+        "rp.create": "Create point",
+        "rp.refresh": "Refresh",
+        "rp.confirm_title": "System restore",
+        "rp.confirm_text": "Restore the system to “{}”?\n\n"
+                           "Windows will reboot and changes made after this "
+                           "point will be lost. Save your work.",
+        "rp.started": "Restore started (point #{}). The computer will reboot.",
+        "rp.fail": "Restore failed: {}",
+        "rp.created": "Restore point created.",
+        "rp.create_fail": "Point not created: {}",
+        "rp.no_admin": "Administrator rights required.",
+        "rp.busy": "Working…",
+
+        # ----------------------------------------------------------- tray
+        "tray.open": "Open Swept",
+        "tray.clean": "Clean %TEMP% and Recycle Bin",
+        "tray.hide": "Minimize to tray",
+        "tray.quit": "Quit",
+        "tray.tip": "Swept · {} free",
+        "tray.hint_title": "Swept is in the tray",
+        "tray.hint_text": "The program keeps running. Double-click the icon to "
+                          "bring the window back.",
+        "tray.clean_confirm_title": "Quick cleanup",
+        "tray.clean_confirm_text": "Clean %TEMP% and the Recycle Bin? The files "
+                                   "will be deleted permanently.",
+        "tray.cleaned": "Cleaned: {}",
+        "tray.unavailable": "The tray is not available on this system.",
+        "app.already_running_title": "Swept is already running",
+        "app.already_running": "The window is already open — it has been brought "
+                               "to the front.",
 
         # ------------------------------------------------ "why it's slow" audit
         "diag.title": "AUDIT: WHY IT'S SLOW",

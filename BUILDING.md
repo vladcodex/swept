@@ -113,9 +113,12 @@ timestamped but the chain is untrusted: UAC and SmartScreen still say "Unknown p
 real distribution trust, replace the `.pfx` with a trusted OSS code-signing certificate and point
 `$pfxPath` in `sign.ps1` at it.
 
-`sign.ps1` signs `dist\Swept\Swept.exe` and the **newest** `dist\Swept-Setup-*.exe`. If installers
-from earlier versions are still sitting in `dist\`, move them aside before the first run — otherwise
-the script re-signs the previous release's setup and leaves the new one unsigned. The order is:
+`sign.ps1` signs `dist\Swept\Swept.exe` and the installer **for the current version**:
+it reads `VERSION` from `build.py` and looks for `dist\Swept-Setup-<version>.exe`. If that file is
+not there yet, it says so and signs the app exe only — it never falls back to "the newest
+`Swept-Setup-*.exe` in the folder". That fallback was the old behaviour and it was a trap: with a
+previous release's installer still in `dist\`, the script silently re-signed that file and left the
+new one unsigned, rewriting the bytes of an already published artifact. The order is:
 
 ```bat
 build.py            :: dist\Swept\
@@ -144,6 +147,62 @@ python cleaner_installer.py --install steam gog
 python cleaner_optimize.py --list
 python cleaner_optimize.py --apply telemetry,advertising,search_suggest
 ```
+
+### Machine-readable output
+
+`cleaner_core.py` can answer a script instead of a human:
+
+```bat
+:: JSON on stdout, no progress lines (requires --yes together with --clean)
+python cleaner_core.py --only temp_user --json
+
+:: report next to the log: .json, .html or .txt is chosen by extension
+python cleaner_core.py --clean --only temp_user,recycle --yes --report report.html
+
+:: only the summary, one line per category
+python cleaner_core.py --scan --quiet
+```
+
+Exit codes are part of the contract, so a scheduled task can tell "nothing to do" from "some files
+could not be deleted":
+
+| Code | Meaning |
+|---|---|
+| 0 | Success |
+| 1 | The run failed (scan or cleanup raised an error) |
+| 2 | Bad arguments (unknown category, report directory does not exist, `--json --clean` without `--yes`) |
+| 3 | Cleanup finished, but some files were refused (access errors). Locked files counted as *skipped* are normal and do not set this code |
+| 4 | Cancelled by the user at the confirmation prompt |
+
+### Rolling back tweaks
+
+Every registry value and every `powercfg` call made by the optimize module is journalled with its
+previous value before it is changed, so it can be undone without a system restore:
+
+```bat
+:: what can be undone, and how many values each item holds
+python cleaner_optimize.py --journal
+
+:: undo one item or everything
+python cleaner_optimize.py --undo telemetry
+python cleaner_optimize.py --undo-all
+```
+
+The journal lives in the settings store (`HKCU\Software\Swept\TweakJournal`, or `settings.json` in
+the portable build) and is capped at 64 items. Re-applying an item never overwrites its original
+snapshot: undoing always returns the machine to the state it had before Swept touched it, not to a
+half-applied state.
+
+### Restore points
+
+```bat
+:: list the points Windows has created (needs administrator rights)
+python cleaner_restore.py
+```
+
+`cleaner_restore.py` only wraps the built-in cmdlets (`Get-ComputerRestorePoint`,
+`Checkpoint-Computer`, `Restore-Computer`); it has no restore logic of its own, and the restore point
+number is validated as an integer before it is put anywhere near a command line.
 
 ## Tests
 
@@ -176,7 +235,9 @@ Two notes when adding tests:
 | `cleaner_gui.py` | CustomTkinter interface, worker threads, message queue |
 | `cleaner_core.py` | Categories, scanning, safe deletion, Recycle Bin |
 | `cleaner_installer.py` | Hardened direct installer: pinned HTTPS sources, signature or hash check, isolated staging folder, silent launch |
-| `cleaner_optimize.py` | Registry and `powercfg` tweaks, Windows version detection |
+| `cleaner_optimize.py` | Registry and `powercfg` tweaks, Windows version detection, registry snapshot journal and per-item undo |
+| `cleaner_restore.py` | Windows restore points: list, create, restore (wraps the built-in cmdlets only) |
+| `cleaner_tray.py` | Tray icon and menu via `ctypes`/`Shell_NotifyIcon` — no extra dependency |
 | `cleaner_i18n.py` | Interface strings (RU/EN), language switching, unit formatting |
 | `cleaner_settings.py` | Settings storage: `HKEY_CURRENT_USER\Software\Swept`, JSON fallback |
 | `build.py` | PyInstaller wrapper with icon, version resource and manifest |

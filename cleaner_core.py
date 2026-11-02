@@ -216,6 +216,104 @@ def get_os_name() -> str:
         return "Windows"
 
 
+# ---------------------------------------------------------------------------
+# Один экземпляр приложения
+# ---------------------------------------------------------------------------
+# Зачем: два окна Swept — это два планировщика, две одновременные очистки
+# одного и того же %TEMP% и две записи в журнал. Второй запуск должен не
+# работать параллельно, а поднять уже открытое окно.
+#
+# Именованный мьютекс — штатный способ Windows для такой проверки: он
+# освобождается сам при завершении процесса (в том числе аварийном), поэтому
+# «залипших» блокировок не остаётся, в отличие от файла-замка.
+#
+# Пространство имён Local\ — на сеанс пользователя: запуск из-под другого
+# пользователя или в другом сеансе не блокируется и не должен.
+SINGLE_INSTANCE_NAME = r"Local\Swept.SingleInstance"
+ERROR_ALREADY_EXISTS = 183
+
+_single_instance_handle = None
+
+
+def acquire_single_instance(name: str = SINGLE_INSTANCE_NAME) -> tuple:
+    """
+    Пытается стать единственным экземпляром приложения.
+
+    Возвращает (первый_ли, дескриптор). Дескриптор нужно держать живым до
+    конца работы процесса — иначе мьютекс освободится и второй запуск пройдёт.
+    Если создать мьютекс не удалось, возвращается (True, None): лучше
+    запустить второе окно, чем не запустить первое.
+    """
+    global _single_instance_handle
+    if not IS_WINDOWS:
+        return True, None
+    try:
+        kernel32 = ctypes.windll.kernel32
+        kernel32.CreateMutexW.restype = ctypes.c_void_p
+        kernel32.CreateMutexW.argtypes = [ctypes.c_void_p, ctypes.c_int,
+                                          ctypes.c_wchar_p]
+        handle = kernel32.CreateMutexW(None, 0, name)
+        if not handle:
+            return True, None
+        if kernel32.GetLastError() == ERROR_ALREADY_EXISTS:
+            kernel32.CloseHandle(ctypes.c_void_p(handle))
+            return False, None
+        _single_instance_handle = handle
+        return True, handle
+    except Exception:
+        return True, None
+
+
+def release_single_instance() -> bool:
+    """
+    Отдаёт мьютекс единственного экземпляра.
+
+    Нужен ровно в одном случае: приложение перезапускает само себя с правами
+    администратора. Новая копия — тоже Swept, и если старый процесс ещё держит
+    мьютекс, она решит «программа уже запущена» и завершится, а старый процесс
+    сразу после этого закроется. Пользователь остался бы без окна вообще.
+    Поэтому мьютекс отдаётся ДО запуска новой копии, а если UAC отклонён —
+    забирается обратно (см. acquire_single_instance).
+
+    True — мьютекс был и теперь свободен. Повторный вызов безопасен.
+    """
+    global _single_instance_handle
+    if _single_instance_handle is None:
+        return False
+    try:
+        ctypes.windll.kernel32.CloseHandle(
+            ctypes.c_void_p(_single_instance_handle))
+    except Exception:
+        pass
+    _single_instance_handle = None
+    return True
+
+
+def focus_window(titles) -> bool:
+    """
+    Поднимает на передний план окно с одним из указанных заголовков.
+
+    Заголовок зависит от языка интерфейса, поэтому принимается список
+    вариантов: второй экземпляр не знает, на каком языке открыто первое окно.
+    Возвращает True, если окно найдено.
+    """
+    if not IS_WINDOWS:
+        return False
+    try:
+        user32 = ctypes.windll.user32
+        for title in titles:
+            if not title:
+                continue
+            hwnd = user32.FindWindowW(None, title)
+            if hwnd:
+                user32.ShowWindow(hwnd, 9)      # SW_RESTORE
+                user32.SetForegroundWindow(hwnd)
+                return True
+    except Exception:
+        return False
+    return False
+
+
 def system_tool(name: str, *subdirs: str) -> str:
     """
     Полный путь к штатной утилите Windows (tasklist, powercfg, powershell...).
@@ -1888,6 +1986,8 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="cleaner_core.py",
         description="Безопасная очистка Windows 10/11 (логика без интерфейса).",
+        epilog="Коды выхода: 0 — успех, 1 — ошибка выполнения, 2 — неверные "
+               "аргументы, 3 — выполнено с ошибками доступа, 4 — отменено.",
     )
     parser.add_argument("--scan", action="store_true",
                         help="только сканировать (режим по умолчанию, ничего не удаляет)")
@@ -1899,6 +1999,15 @@ def _build_arg_parser() -> argparse.ArgumentParser:
                         help="показать список категорий и выйти")
     parser.add_argument("--yes", action="store_true",
                         help="не спрашивать подтверждение при реальной очистке")
+    parser.add_argument("--json", action="store_true",
+                        help="напечатать результат в JSON (без прогресса; "
+                             "с --clean требует --yes)")
+    parser.add_argument("--report", metavar="PATH",
+                        help="сохранить отчёт: .json, .html или .txt по расширению")
+    parser.add_argument("--quiet", action="store_true",
+                        help="только итог, без строк по каждому файлу")
+    parser.add_argument("--version", action="store_true",
+                        help="показать версию и выйти")
     return parser
 
 
@@ -1909,15 +2018,250 @@ def _print_categories() -> None:
             cat["key"], group_title(cat["group"]), i18n.fld(cat, "title")))
 
 
+# ---------------------------------------------------------------------------
+# Отчёты: один сбор данных — три формата вывода
+# ---------------------------------------------------------------------------
+# Коды выхода — контракт для скриптов и CI, поэтому они зафиксированы
+# константами, а не «что получилось». Отдельно различаются «ошибки доступа»
+# (3) и «отменено пользователем» (4): для автоматики это разные события.
+EXIT_OK = 0
+EXIT_ERROR = 1
+EXIT_USAGE = 2
+EXIT_PARTIAL = 3
+EXIT_CANCELLED = 4
+
+# Сколько путей попадает в отчёт на категорию. Полный список из сотен тысяч
+# строк бесполезен в файле и раздувает его до мегабайт; при обрезке в отчёте
+# стоит флаг truncated, чтобы это было видно, а не выглядело как «всё».
+REPORT_MAX_PATHS = 500
+
+
+def app_version() -> str:
+    """Версия приложения строкой. Неизвестна — «0.0.0», а не исключение."""
+    try:
+        import cleaner_update
+        return ".".join(str(part) for part in cleaner_update.FALLBACK_VERSION)
+    except Exception:
+        return "0.0.0"
+
+
+def build_report(results: dict, mode: str, dry_run: bool,
+                 summary: dict | None = None) -> dict:
+    """
+    Собирает отчёт из результатов сканирования.
+
+    mode — "scan" или "clean"; summary — итог очистки (если она была).
+    Структура намеренно плоская: её читают и человек, и скрипт.
+    """
+    import datetime
+
+    categories = []
+    total_size = 0
+    total_count = 0
+    for key, res in (results or {}).items():
+        cat = get_category(key) or {}
+        files = res.get("files") or []
+        paths = [{"path": path, "size": size}
+                 for path, size in files[:REPORT_MAX_PATHS]]
+        item = {
+            "key": key,
+            "title": i18n.fld(cat, "title") or key,
+            "group": group_title(cat.get("group", "")) if cat else "",
+            "count": int(res.get("total_count") or 0),
+            "size": int(res.get("total_size") or 0),
+            "size_text": format_bytes(res.get("total_size") or 0),
+            "errors": len(res.get("errors") or []),
+            "truncated": len(files) > REPORT_MAX_PATHS,
+            "paths": paths,
+        }
+        if res.get("recycle"):
+            item["recycle"] = res["recycle"]
+        categories.append(item)
+        total_size += item["size"]
+        total_count += item["count"]
+
+    report = {
+        "tool": "Swept",
+        "version": app_version(),
+        "generated": datetime.datetime.now().isoformat(timespec="seconds"),
+        "mode": mode,
+        "dry_run": bool(dry_run),
+        "os": get_os_name(),
+        "admin": bool(is_admin()),
+        "totals": {
+            "count": total_count,
+            "size": total_size,
+            "size_text": format_bytes(total_size),
+        },
+        "categories": categories,
+    }
+    if summary is not None:
+        report["clean"] = {
+            "removed": int(summary.get("removed") or 0),
+            "skipped": int(summary.get("skipped") or 0),
+            "errors": int(summary.get("errors") or 0),
+            "freed": int(summary.get("freed") or 0),
+            "freed_text": format_bytes(summary.get("freed") or 0),
+        }
+    return report
+
+
+def report_to_json(report: dict) -> str:
+    """Отчёт в JSON. ensure_ascii=False — кириллица в путях остаётся читаемой."""
+    import json
+    return json.dumps(report, ensure_ascii=False, indent=2)
+
+
+def _html_escape(text) -> str:
+    """Минимальное экранирование для HTML-отчёта (без внешних зависимостей)."""
+    return (str(text).replace("&", "&amp;").replace("<", "&lt;")
+            .replace(">", "&gt;").replace('"', "&quot;"))
+
+
+def report_to_html(report: dict) -> str:
+    """
+    Самодостаточный HTML-отчёт: ни CSS-файлов, ни картинок, ни скриптов.
+
+    Такой файл можно отправить в переписку или приложить к баг-репорту —
+    он откроется где угодно и ничего не подгружает из сети.
+    """
+    esc = _html_escape
+    rows = []
+    for item in report.get("categories", []):
+        rows.append(
+            "<tr><td>{title}</td><td class='n'>{count}</td>"
+            "<td class='n'>{size}</td><td class='n'>{errors}</td></tr>".format(
+                title=esc(item.get("title", "")),
+                count=item.get("count", 0),
+                size=esc(item.get("size_text", "")),
+                errors=item.get("errors", 0)))
+    totals = report.get("totals", {})
+    clean = report.get("clean")
+    clean_html = ""
+    if clean:
+        clean_html = (
+            "<p class='clean'>Удалено: <b>{removed}</b> · пропущено: {skipped}"
+            " · ошибок доступа: {errors} · освобождено: <b>{freed}</b></p>".format(
+                removed=clean.get("removed", 0), skipped=clean.get("skipped", 0),
+                errors=clean.get("errors", 0), freed=esc(clean.get("freed_text", ""))))
+    return """<!DOCTYPE html>
+<html lang="ru"><head><meta charset="utf-8">
+<title>Swept — отчёт {generated}</title>
+<style>
+ body{{font-family:"Segoe UI",system-ui,sans-serif;margin:32px;color:#1b1f24;background:#fff}}
+ h1{{font-size:20px;margin:0 0 4px}}
+ .meta{{color:#5b6570;font-size:13px;margin-bottom:18px}}
+ table{{border-collapse:collapse;width:100%;font-size:14px}}
+ th,td{{border-bottom:1px solid #e3e7ec;padding:7px 10px;text-align:left}}
+ th{{background:#f5f7fa;font-weight:600}}
+ td.n{{text-align:right;white-space:nowrap}}
+ .clean{{background:#f0f7f0;border-left:3px solid #3f9d4a;padding:10px 12px;font-size:14px}}
+ .foot{{color:#8a949e;font-size:12px;margin-top:18px}}
+</style></head><body>
+<h1>Swept — отчёт об очистке</h1>
+<div class="meta">{mode} · {generated} · {os} · права администратора: {admin}</div>
+{clean}
+<p>Найдено объектов: <b>{count}</b> · объём: <b>{size}</b></p>
+<table><thead><tr><th>Категория</th><th>Файлов</th><th>Объём</th><th>Ошибок</th></tr></thead>
+<tbody>{rows}</tbody></table>
+<div class="foot">Отчёт создан локально программой Swept {version}. Данные никуда не отправлялись.</div>
+</body></html>
+""".format(
+        generated=esc(report.get("generated", "")),
+        mode="ОЧИСТКА" if report.get("mode") == "clean" else "СКАНИРОВАНИЕ",
+        os=esc(report.get("os", "")),
+        admin="есть" if report.get("admin") else "нет",
+        clean=clean_html,
+        count=totals.get("count", 0),
+        size=esc(totals.get("size_text", "")),
+        rows="\n".join(rows),
+        version=esc(report.get("version", "")),
+    )
+
+
+def report_to_text(report: dict) -> str:
+    """Текстовый отчёт: таблица с выравниванием, годится для письма или лога."""
+    lines = [
+        "Swept {} — {}".format(report.get("version", ""),
+                               "ОЧИСТКА" if report.get("mode") == "clean"
+                               else "СКАНИРОВАНИЕ"),
+        "Создан: {} | ОС: {} | права администратора: {}".format(
+            report.get("generated", ""), report.get("os", ""),
+            "есть" if report.get("admin") else "нет"),
+        "",
+        "{:<44} {:>9} {:>11} {:>7}".format("Категория", "Файлов", "Объём", "Ошибок"),
+        "-" * 74,
+    ]
+    for item in report.get("categories", []):
+        title = str(item.get("title", ""))[:44]
+        lines.append("{:<44} {:>9} {:>11} {:>7}".format(
+            title, item.get("count", 0), item.get("size_text", ""),
+            item.get("errors", 0)))
+    totals = report.get("totals", {})
+    lines.append("-" * 74)
+    lines.append("{:<44} {:>9} {:>11}".format(
+        "ИТОГО", totals.get("count", 0), totals.get("size_text", "")))
+    clean = report.get("clean")
+    if clean:
+        lines.append("")
+        lines.append("Удалено: {} | пропущено: {} | ошибок: {} | освобождено: {}".format(
+            clean.get("removed", 0), clean.get("skipped", 0),
+            clean.get("errors", 0), clean.get("freed_text", "")))
+    return "\n".join(lines)
+
+
+def write_report(path: str, report: dict) -> tuple:
+    """
+    Пишет отчёт в файл. Формат — по расширению (.json / .html / иначе текст).
+
+    Возвращает (ok, message). Каталог должен существовать: создавать его
+    «на всякий случай» рядом с чужой папкой — не наше дело.
+    """
+    suffix = os.path.splitext(path)[1].lower()
+    if suffix == ".json":
+        text = report_to_json(report)
+    elif suffix in (".html", ".htm"):
+        text = report_to_html(report)
+    else:
+        text = report_to_text(report)
+    try:
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(text)
+        return True, path
+    except OSError as exc:
+        return False, str(exc)
+
+
 def main(argv=None) -> int:
-    """Точка входа CLI. Возвращает код выхода."""
-    args = _build_arg_parser().parse_args(argv)
+    """Точка входа CLI. Возвращает код выхода (см. EXIT_* выше)."""
+    parser = _build_arg_parser()
+    args = parser.parse_args(argv)
+
+    if args.version:
+        print("Swept " + app_version())
+        return EXIT_OK
 
     if args.list:
         _print_categories()
-        return 0
+        return EXIT_OK
 
-    if not IS_WINDOWS:
+    # Машинный вывод и интерактивный вопрос несовместимы: JSON в stdout
+    # должен остаться разбираемым, поэтому подтверждение требует --yes.
+    if args.json and args.clean and not args.yes:
+        print("[ОШИБКА] --json с --clean требует --yes: подтверждение "
+              "вопросом сломало бы JSON.", file=sys.stderr)
+        return EXIT_USAGE
+
+    if args.report:
+        report_dir = os.path.dirname(os.path.abspath(args.report))
+        if not os.path.isdir(report_dir):
+            print("[ОШИБКА] Каталог для отчёта не найден: " + report_dir,
+                  file=sys.stderr)
+            return EXIT_USAGE
+
+    quiet = bool(args.quiet or args.json)
+
+    if not IS_WINDOWS and not quiet:
         print("[ВНИМАНИЕ] Модуль рассчитан на Windows — часть функций недоступна.")
 
     # Выбор категорий.
@@ -1925,56 +2269,93 @@ def main(argv=None) -> int:
         keys = [k.strip() for k in args.only.split(",") if k.strip()]
         unknown = [k for k in keys if get_category(k) is None]
         if unknown:
-            print("[ОШИБКА] Неизвестные категории: " + ", ".join(unknown))
-            return 2
+            print("[ОШИБКА] Неизвестные категории: " + ", ".join(unknown),
+                  file=sys.stderr)
+            return EXIT_USAGE
     else:
         keys = [cat["key"] for cat in CATEGORIES]
 
     dry_run = not args.clean
 
-    print("=" * 70)
-    print("Swept — {}".format("СКАНИРОВАНИЕ (ничего не удаляется)" if dry_run
-                                    else "ОЧИСТКА (реальное удаление)"))
-    print("Права администратора: {}".format("ЕСТЬ" if is_admin() else "НЕТ (часть файлов будет пропущена)"))
-    print("ОС: {} | Категорий выбрано: {}".format(get_os_name(), len(keys)))
-    print("=" * 70)
+    def log(text):
+        if not quiet:
+            print(text)
+
+    def status(text):
+        if not quiet:
+            print("\n>> " + text)
+
+    if not quiet:
+        print("=" * 70)
+        print("Swept — {}".format("СКАНИРОВАНИЕ (ничего не удаляется)" if dry_run
+                                        else "ОЧИСТКА (реальное удаление)"))
+        print("Права администратора: {}".format(
+            "ЕСТЬ" if is_admin() else "НЕТ (часть файлов будет пропущена)"))
+        print("ОС: {} | Категорий выбрано: {}".format(get_os_name(), len(keys)))
+        print("=" * 70)
 
     # Проверка запущенных браузеров перед очисткой.
     if not dry_run:
         running = get_running_browsers(keys)
         if running:
             print("[ВНИМАНИЕ] Запущены браузеры: " +
-                  ", ".join(BROWSERS[k]["title"] for k in running))
-            print("           Файлы кэша/истории/куки могут быть заняты и пропущены.")
+                  ", ".join(BROWSERS[k]["title"] for k in running),
+                  file=sys.stderr if quiet else sys.stdout)
+            if not quiet:
+                print("           Файлы кэша/истории/куки могут быть заняты и пропущены.")
 
     if not dry_run and not args.yes:
         answer = input("Продолжить реальную очистку? [y/N]: ").strip().lower()
         if answer not in ("y", "yes", "д", "да"):
             print("Отменено пользователем.")
-            return 0
+            return EXIT_CANCELLED
 
-    def log(text):
-        print(text)
+    try:
+        results = scan_categories(keys, on_log=log, on_status=status)
+    except Exception as exc:
+        print("[ОШИБКА] Сканирование прервано: {!r}".format(exc), file=sys.stderr)
+        return EXIT_ERROR
 
-    def status(text):
-        print("\n>> " + text)
-
-    results = scan_categories(keys, on_log=log, on_status=status)
     total_size = sum(r["total_size"] for r in results.values())
     total_count = sum(r["total_count"] for r in results.values())
-    print("\nНайдено файлов: {} | Объём: {}".format(total_count, format_bytes(total_size)))
+    log("\nНайдено файлов: {} | Объём: {}".format(total_count,
+                                                  format_bytes(total_size)))
 
+    summary = None
+    exit_code = EXIT_OK
     if dry_run:
-        print("\nРежим сканирования завершён. Для удаления добавьте --clean.")
-        return 0
+        log("\nРежим сканирования завершён. Для удаления добавьте --clean.")
+    else:
+        try:
+            summary = clean_categories(results, dry_run=False, on_log=log,
+                                       on_status=status)
+        except Exception as exc:
+            print("[ОШИБКА] Очистка прервана: {!r}".format(exc), file=sys.stderr)
+            return EXIT_ERROR
+        if not quiet:
+            print("\n" + "=" * 70)
+            print("Удалено объектов: {} | Пропущено: {} | Ошибок доступа: {}".format(
+                summary["removed"], summary["skipped"], summary["errors"]))
+            print("Освобождено: {}".format(format_bytes(summary["freed"])))
+            print("=" * 70)
+        # Пропуск занятого файла — штатная ситуация, а не сбой: код 3 только
+        # при настоящих ошибках доступа.
+        if summary.get("errors"):
+            exit_code = EXIT_PARTIAL
 
-    summary = clean_categories(results, dry_run=False, on_log=log, on_status=status)
-    print("\n" + "=" * 70)
-    print("Удалено объектов: {} | Пропущено: {} | Ошибок доступа: {}".format(
-        summary["removed"], summary["skipped"], summary["errors"]))
-    print("Освобождено: {}".format(format_bytes(summary["freed"])))
-    print("=" * 70)
-    return 0
+    report = build_report(results, "clean" if not dry_run else "scan",
+                          dry_run, summary)
+    if args.report:
+        ok, message = write_report(args.report, report)
+        if ok:
+            log("Отчёт сохранён: " + message)
+        else:
+            print("[ОШИБКА] Отчёт не сохранён: " + message, file=sys.stderr)
+            return EXIT_ERROR
+
+    if args.json:
+        print(report_to_json(report))
+    return exit_code
 
 
 if __name__ == "__main__":

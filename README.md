@@ -22,9 +22,16 @@ Free and open source, with a dark interface available in **two languages — Eng
   widgets…) applied after a system restore point where System Protection is enabled — if it is not,
   the log says why before anything is changed — plus a "why is it slow" audit that names the causes
   with real numbers and measures the effect of every change.
+- ↩ **Roll back** — every value Swept changes is journalled with its previous state *before* the
+  write, so a tweak can be undone on its own instead of rolling the whole machine back; the same
+  window lists Windows restore points and can restore to one.
 - ⏰ **Schedule** — quiet automatic cleanup: daily or weekly at a chosen time, dry run first,
   a restore point before deletion, and an optional Windows Task Scheduler task that runs Swept
   in the background even when the app is closed.
+
+It also lives in the notification area: the tray icon shows the free space on the system drive and
+offers "open", "clean `%TEMP%` and the Recycle Bin" and "quit", while a second launch of the program
+brings the already-open window to the front instead of starting a parallel copy.
 
 No telemetry, no bundled offers, no background services — and every deleted file and changed
 setting is written to the log. The version chip in the header checks GitHub for a newer release,
@@ -60,9 +67,13 @@ portable program with five tabs:
 |---|---|
 | **🧹 Cleanup** | Frees disk space: temp files, browser caches, Windows Update cache, Recycle Bin, logs, dumps and game-launcher junk across 22 categories, including thumbnails, Prefetch, Delivery Optimization, GPU shader cache, Office, Discord and Spotify. Always analyzes before deleting. Also checks and cleans the WinSxS component store with the official DISM commands. |
 | **📦 Install** | A curated catalog of 24 popular programs plus 12 Visual C++ Redistributable packages, fetched from the vendors' own CDNs and verified by signature or pinned hash before anything runs. |
-| **⚡ Optimize** | 12 safe Windows tweaks (telemetry, power plan, background apps, Game DVR, debloat) applied after a restore point where System Protection is on, plus a "why is it slow" audit that names the causes with real numbers and measures the effect. |
+| **⚡ Optimize** | 12 safe Windows tweaks (telemetry, power plan, background apps, Game DVR, debloat) applied after a restore point where System Protection is on, plus a "why is it slow" audit that names the causes with real numbers and measures the effect. Every change is journalled before it is made, so any item can be undone on its own (`↩`), and the same rollback window lists the Windows restore points. |
 | **⏰ Schedule** | Quiet automatic cleanup: daily or weekly, dry run first, restore point before deletion where System Protection is on, optionally driven by a Windows Task Scheduler task that runs Swept headless in the background. |
 | **📋 Log** | The full history of every deleted file and changed setting, with reasons for everything that was skipped. |
+
+It also lives in the notification area (free space in the tooltip, quick `%TEMP%` + Recycle Bin
+cleanup with a confirmation, open/quit), and starting it twice raises the window that is already
+open instead of running a second copy.
 
 **How it works under the hood:**
 
@@ -77,6 +88,9 @@ portable program with five tabs:
 - The scheduled task runs the same executable in a **headless mode** (`Swept.exe --silent-clean`)
   that performs the whole pipeline — restore point, dry run, cleanup — and writes
   `swept_silent_clean.log` next to the binary.
+- **A command line that a script can read**: the core module prints JSON on request, writes a report
+  (`.json`, `.html` or `.txt` by extension) and returns documented exit codes, so a scheduled task
+  can tell "nothing to do" from "some files were refused". See [BUILDING.md](BUILDING.md#command-line).
 
 **Privacy:** no telemetry, no analytics, no bundled offers, no background services. The only
 network access is what you start yourself — the HTTPS download from the Install tab, and the update
@@ -206,6 +220,23 @@ After a run the machine is measured again and the card reports the real effect:
 The same button creates one at any time without applying optimizations. Built-in apps removed by
 the debloat step cannot be restored automatically — the app says so and points to Microsoft Store.
 
+**Roll back** (`↩`) — a second, much narrower layer. Before each registry write and each `powercfg`
+call, Swept records what the value was: whether it existed, its type and its data. Undo is therefore
+not a guess about "what the default should be" but an exact restore of what stood there before.
+Two consequences worth knowing:
+
+- Every tweak card gets its own small `↩` button once it has been applied — you can revert one
+  setting without touching the rest.
+- Re-applying a tweak never overwrites its original snapshot, so undo always returns the machine to
+  the state it had before Swept first touched it, not to a half-applied state.
+
+The same window lists the **Windows restore points** with their date, description and number, and
+can restore to any of them — that is the wider net: it rolls back drivers, updates and other
+programs too, and it reboots the computer. Reading the list requires administrator rights; the app
+says so instead of showing an empty list as if there were no points. Values that could not be read
+before the change (for example a key protected by the system) are marked as unrestorable rather than
+being guessed at, and settings removed by the debloat step are honestly listed as not reversible.
+
 ### ⏰ Schedule
 
 Quiet automatic cleanup with no user interaction:
@@ -263,12 +294,19 @@ Swept is built around the assumption that a cleaner must never be able to eat yo
     and it is handled only through `dism.exe` taken from `%SystemRoot%\System32` — the command is an
     argument vector with `shell=False`, `ResetBase` is never passed, and the Clean button is disabled
     unless DISM itself answers "cleanup recommended: Yes".
+13. **Nothing is changed before it is recorded.** Each registry write and each `powercfg` call stores
+    the previous state first — existence, type and data — so a change can be reversed exactly instead
+    of being approximated by "the default". A value that could not be read is marked unrestorable
+    rather than guessed at. Restore points are handled only through the built-in cmdlets
+    (`Get-ComputerRestorePoint`, `Checkpoint-Computer`, `Restore-Computer`), and a restore point
+    number is validated as an integer before it goes anywhere near a command line.
 
 ### How these claims are checked
 
 Every point above is covered by a test suite in `tests/`, not by a promise in this file: the
-whitelist, the blacklist, the reparse-point escape, the personal-folder refusal and the update
-contract each have their own tests, and the suite runs on every push in GitHub Actions.
+whitelist, the blacklist, the reparse-point escape, the personal-folder refusal, the update
+contract, the rollback journal and the restore-point parsing each have their own tests, and the
+suite runs on every push in GitHub Actions.
 
 ```bat
 pip install -r requirements-dev.txt
@@ -304,6 +342,17 @@ follows you rather than the folder.
 ## Limitations
 
 - Registry tweaks are written directly; Windows may re-apply some of them after a feature update.
+  Undo restores the value Swept recorded, so it cannot undo a change Windows made afterwards.
+- The rollback journal is per user and capped at the 64 most recent items. A value that could not be
+  read before the change (a key the system protects) is marked unrestorable instead of being
+  guessed at, and built-in apps removed by the debloat step cannot be brought back by undo — only
+  from the Microsoft Store.
+- Restoring a Windows restore point reboots the computer and discards everything installed or
+  changed after that point. Reading the list requires administrator rights, and where System
+  Protection is off for the system drive there are no points to show — the window says which of the
+  two it is instead of displaying an empty list.
+- The tray icon depends on Explorer: if the shell is replaced or the notification area is disabled
+  by policy, Swept works exactly as before, just without the icon.
 - A restore point is **attempted** before the tweaks and before scheduled deletion, but a failed
   attempt does not stop the run. Where System Protection is turned off for the system drive,
   `Checkpoint-Computer` refuses, Swept writes the reason to the log and carries on. If you depend on

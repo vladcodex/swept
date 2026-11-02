@@ -16,7 +16,7 @@ python -m pytest
 python -m ruff check .
 ```
 
-162 tests, about four seconds. CI runs the same two commands on `windows-latest`
+239 tests, about two seconds. CI runs the same two commands on `windows-latest`
 with Python 3.12 and 3.13 on every push and pull request
 (`.github/workflows/tests.yml`).
 
@@ -34,6 +34,8 @@ with Python 3.12 and 3.13 on every push and pull request
 | Junction escape | `tests/test_delete.py` | A real junction inside the cache directory pointing at `Documents` must be refused, even though the junction itself sits inside an allowed folder |
 | Settings | `tests/test_settings.py` | Registry and file storage, round trip, missing value, broken JSON, case-insensitive cache, and the regression where a failed write still left the value in the cache |
 | Update check | `tests/test_version.py` | The version parser (a date in a release title is not a version), `is_newer`, the URL allowlist, and the contract that `check()` reports every failure as a status instead of raising |
+| Rollback journal | `tests/test_journal.py` | A snapshot is taken *before* the write and holds the previous value; a second run never overwrites the original snapshot; undo restores an existing value, deletes one that did not exist, and refuses to guess when the old value could not be read; a `powercfg` scheme GUID from the journal is validated before use; unknown entry kinds fail cleanly |
+| Restore points | `tests/test_restore.py` | JSON from PowerShell (object vs array vs empty), points sorted newest first, entries without a number dropped, restore point numbers validated as integers, "protection disabled" vs "access denied" reported separately, and `restore_to_point` refusing a bad number or a non-elevated process before any command runs |
 
 The tests build a temporary fake system — their own `%LOCALAPPDATA%`, `%SystemRoot%`,
 `Program Files` — inside `tmp_path`. They never read the real profile and cannot delete
@@ -74,6 +76,10 @@ part of the process — there is one person and no second pair of eyes.
 7. Run the portable build with `swept.portable` next to the exe and confirm nothing is
    written to the registry.
 8. Verify the published SHA-256 against the downloaded file.
+9. Apply a tweak, press `↩` on its card and confirm the previous value is back in `regedit`
+   (or `python cleaner_optimize.py --journal` before and after).
+10. Hide the window to the tray, double-click the icon, confirm it returns; start the exe a
+    second time and confirm the second copy raises the first window instead of opening.
 
 ## What is not covered at all
 
@@ -81,6 +87,13 @@ Stated plainly, because this is the list that matters:
 
 * **The GUI.** No tests. Threading between the scan worker and the widget updates is
   verified by using the program, not by assertions.
+* **The tray icon.** `cleaner_tray.py` has no automated tests: it is a `ctypes` wrapper
+  around `Shell_NotifyIcon`, and checking it means looking at the notification area —
+  clicking the menu, hiding the window, restarting Explorer. Done by hand, per release.
+* **The rollback window.** The journal itself is tested, but the dialog that drives it
+  (list, per-item undo, restore point list, restore) is checked by using it.
+* **An actual system restore.** `Restore-Computer` reboots the machine, so no test runs
+  it. Only the argument building and the refusal paths are asserted.
 * **The installer tab.** Downloading from vendor CDNs, signature and hash verification,
   silent-install argument vectors — checked by installing the programs, not by tests.
 * **The DISM wrapper.** The command is an argument vector with `shell=False` and
