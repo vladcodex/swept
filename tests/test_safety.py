@@ -193,3 +193,62 @@ class TestReparsePoint:
         if not make_junction(link, target):
             pytest.skip("среда не позволяет создать junction")
         assert core.is_reparse_point(str(link)) is True
+
+
+# --------------------------------------------------------------------------
+# Файлы прямо в системном корне
+#
+# В _protected_paths перечислены только подпапки Windows и ProgramData,
+# которые разрешено чистить. Сами корни туда не входят — иначе правило
+# startswith запретило бы и очистку C:/Windows/Temp. Из-за этого файл вида
+# C:/Windows/win.ini прикрывался только белым списком. Эти тесты фиксируют,
+# что дыра закрыта, а чистка при этом не сломана.
+# --------------------------------------------------------------------------
+class TestProtectedRoots:
+    def test_file_directly_in_windows_root_is_protected(self, fake_env):
+        assert core.is_protected(str(fake_env.windir / "win.ini")) is True
+
+    def test_file_directly_in_programdata_is_protected(self, fake_env):
+        assert core.is_protected(str(fake_env.programdata / "payload.dat")) is True
+
+    def test_file_directly_in_profile_is_protected(self, fake_env):
+        assert core.is_protected(str(fake_env.home / "notes.txt")) is True
+
+    def test_file_directly_in_drive_root_is_protected(self, fake_env):
+        root = os.path.splitdrive(core.get_env_paths()["windir"])[0] + os.sep
+        assert core.is_protected(os.path.join(root, "anything.txt")) is True
+
+    def test_windows_subdir_still_allowed(self, fake_env):
+        # Главное: новые правила не должны ломать чистку C:/Windows/Temp.
+        assert core.is_protected(str(fake_env.windir / "Temp" / "a.tmp")) is False
+
+    def test_prefetch_still_allowed(self, fake_env):
+        assert core.is_protected(
+            str(fake_env.windir / "Prefetch" / "APP.PF")) is False
+
+    def test_logfiles_exception_still_wins(self, fake_env):
+        assert core.is_protected(
+            str(fake_env.system32 / "LogFiles" / "CBS.log")) is False
+
+    def test_documents_are_protected(self, fake_env):
+        assert core.is_protected(
+            str(fake_env.home / "Documents" / "report.docx")) is True
+
+    def test_downloads_are_protected(self, fake_env):
+        assert core.is_protected(
+            str(fake_env.home / "Downloads" / "setup.exe")) is True
+
+    def test_no_category_root_is_blocked(self, fake_env):
+        """Ни один каталог, который категории чистят, не должен быть защищён.
+
+        Если новая категория добавит путь, не попавший в _protected_exceptions,
+        очистка молча перестанет работать. Тест ловит это до релиза.
+        """
+        for cat in core.CATEGORIES:
+            for directory in core.build_allowed(cat["key"])["dirs"]:
+                # И сам каталог, и файл внутри него должны быть разрешены:
+                # правило «файлы прямо в системном корне запрещены» не должно
+                # задевать каталоги, которые категория чистит.
+                assert not core.is_protected(directory), (cat["key"], directory)
+                probe = os.path.join(directory, "probe.tmp")
+                assert not core.is_protected(probe), (cat["key"], directory)

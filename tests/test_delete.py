@@ -286,3 +286,52 @@ class TestCleanScanResult:
         # Сигнал не должен уходить на каждый файл, но последний обязан дойти.
         assert len(calls) < len(files)
         assert calls[-1] == (50, 50)
+
+
+# --------------------------------------------------------------------------
+# Битые записи в результате скана
+#
+# Результат приходит из scan_category и всегда содержит пары (путь, размер).
+# Но если запись окажется испорченной, очистка обязана продолжить работу:
+# к этому моменту часть файлов уже удалена, и падение на середине оставило бы
+# статистику недосчитанной, а пользователя — без итога.
+# --------------------------------------------------------------------------
+class TestCleanScanResultBadInput:
+    def _result(self, files):
+        return {"key": "test", "files": files, "dirs": [], "errors": [],
+                "total_size": 0, "total_count": len(files), "recycle": None,
+                "selected": None}
+
+    def test_entry_without_size_is_skipped(self, allowed, cache_dir):
+        good = cache_dir / "good.tmp"
+        good.write_bytes(b"12345")
+        stats = core.clean_scan_result(
+            self._result([("only-path",), (str(good), 5)]), allowed=allowed)
+        assert stats["skipped"] == 1
+        assert stats["removed"] == 1
+        assert stats["freed"] == 5
+        assert not good.exists()
+
+    def test_none_entry_is_skipped(self, allowed, cache_dir):
+        stats = core.clean_scan_result(self._result([None]), allowed=allowed)
+        assert stats["skipped"] == 1
+        assert stats["removed"] == 0
+        assert stats["freed"] == 0
+
+    def test_negative_size_does_not_subtract(self, allowed, cache_dir):
+        """Отрицательный размер раньше вычитался из итога."""
+        good = cache_dir / "neg.tmp"
+        good.write_bytes(b"x")
+        stats = core.clean_scan_result(
+            self._result([(str(good), -1024)]), allowed=allowed)
+        assert stats["removed"] == 1
+        assert stats["freed"] == 0
+
+    def test_non_numeric_size_counts_as_zero(self, allowed, cache_dir):
+        good = cache_dir / "str.tmp"
+        good.write_bytes(b"x")
+        stats = core.clean_scan_result(
+            self._result([(str(good), "abc")]), allowed=allowed)
+        assert stats["removed"] == 1
+        assert stats["freed"] == 0
+        assert not good.exists()

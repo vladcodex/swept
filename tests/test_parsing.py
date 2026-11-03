@@ -88,3 +88,25 @@ class TestFormatBytes:
 
     def test_negative_keeps_sign(self):
         assert core.format_bytes(-1024).startswith("-1.00")
+
+
+class TestProgressFromLineEdges:
+    def test_none_does_not_crash(self):
+        """None вместо строки — не повод падать: вызывающая сторона может
+        передать что угодно, а прогресс всего лишь не обновится."""
+        assert core._progress_from_line(None) is None
+
+    def test_empty_and_garbage(self):
+        assert core._progress_from_line("") is None
+        assert core._progress_from_line("[") is None
+        assert core._progress_from_line("[]") is None
+
+
+class TestFormatBytesNonFinite:
+    def test_nan_is_zero(self):
+        """«nan ТБ» в окне выглядит как сбой программы, а не как размер."""
+        assert core.format_bytes(float("nan")) == core.format_bytes(0)
+
+    def test_infinity_is_zero(self):
+        assert core.format_bytes(float("inf")) == core.format_bytes(0)
+        assert core.format_bytes(float("-inf")) == core.format_bytes(0)

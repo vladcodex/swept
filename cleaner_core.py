@@ -46,6 +46,7 @@ from __future__ import annotations
 import argparse
 import ctypes
 import fnmatch
+import math
 import os
 import platform
 import re
@@ -112,6 +113,32 @@ def _protected_paths() -> tuple:
 
 
 @lru_cache(maxsize=1)
+def _protected_roots_exact() -> tuple:
+    """
+    Каталоги, в которых нельзя удалять ничего лежащего НЕПОСРЕДСТВЕННО в них.
+
+    В _protected_paths перечислены только подпапки Windows и ProgramData,
+    которые разрешено чистить. Сами корни там отсутствуют намеренно: правило
+    «p.startswith(корень)» запретило бы заодно и очистку C:\\Windows\\Temp.
+    Из-за этого файл вида C:\\Windows\\win.ini не считался защищённым —
+    его прикрывал только белый список.
+
+    Эта проверка закрывает дыру, не трогая вложенные каталоги: запрещены
+    ровно те объекты, чей родитель — системный корень.
+    """
+    env = get_env_paths()
+    windir = env.get("windir") or r"C:\Windows"
+    drive_root = os.path.splitdrive(windir)[0] + os.sep
+    roots = [
+        windir,
+        env.get("programdata") or r"C:\ProgramData",
+        env.get("userprofile") or "",
+        drive_root,
+    ]
+    return tuple(_norm(root) for root in roots if root)
+
+
+@lru_cache(maxsize=1)
 def _protected_exceptions() -> tuple:
     """Нормализованный список разрешённых подпапок внутри защищённых зон (кеш)."""
     env = get_env_paths()
@@ -121,6 +148,30 @@ def _protected_exceptions() -> tuple:
     paths = [
         os.path.join(windir, "System32", "LogFiles"),
         os.path.join(windir, "System32", "winevt", "Logs"),
+    ]
+    # Каталоги внутри Windows и ProgramData, которые категории чистят.
+    # Перечислены явно, а не выведены из CATEGORIES намеренно: иначе
+    # достаточно было бы добавить C:\Windows в категорию, и защита сама
+    # выдала бы себе исключение. Список обязан отставать от конфигурации
+    # только в сторону запрета — за этим следит тест
+    # test_no_category_root_is_blocked.
+    paths += [
+        os.path.join(windir, "Temp"),
+        os.path.join(windir, "Prefetch"),
+        os.path.join(windir, "Logs"),
+        os.path.join(windir, "Minidump"),
+        os.path.join(windir, "SoftwareDistribution", "Download"),
+        os.path.join(windir, "ServiceProfiles", "NetworkService", "AppData",
+                     "Local", "Microsoft", "Windows", "DeliveryOptimization",
+                     "Cache"),
+    ]
+    program_data = env.get("programdata") or r"C:\ProgramData"
+    paths += [
+        os.path.join(program_data, "Microsoft", "Windows", "WER"),
+        os.path.join(program_data, "Epic", "EpicGamesLauncher", "Data",
+                     "ManifestCache"),
+        os.path.join(program_data, "Ubisoft Launcher", "cache"),
+        os.path.join(program_data, "GOG.com", "Galaxy", "cache"),
     ]
     # Игровые лаунчеры: разрешаем чистить ТОЛЬКО конкретные кэш/логи/temp-папки
     # Steam, которые лежат внутри защищённой зоны "Program Files (x86)".
@@ -139,6 +190,7 @@ def reset_protection_cache() -> None:
     на лету; в обычной работе вызывать не требуется.
     """
     _protected_paths.cache_clear()
+    _protected_roots_exact.cache_clear()
     _protected_exceptions.cache_clear()
 
 
@@ -171,7 +223,9 @@ def _norm(path: str) -> str:
 def is_protected(path: str) -> bool:
     """
     True, если путь находится в защищённой (чёрной) зоне.
-    Учитывает исключения (подпапки, которые чистить можно).
+
+    Учитывает исключения (подпапки, которые чистить можно) и запрещает всё,
+    что лежит прямо в системном корне или в личной папке пользователя.
     """
     p = _norm(path)
 
@@ -194,6 +248,17 @@ def is_protected(path: str) -> bool:
     for pr in _protected_paths():
         if p == pr or p.startswith(pr + os.sep):
             return True
+
+    # 5) Файлы, лежащие НЕПОСРЕДСТВЕННО в системном корне. Сами корни в
+    #    _protected_paths не перечислены (иначе запрет накрыл бы и чистку
+    #    C:\Windows\Temp), поэтому C:\Windows\win.ini прикрывался только
+    #    белым списком. Теперь запрещён и здесь.
+    if os.path.dirname(p) in _protected_roots_exact():
+        return True
+
+    # 6) Личные папки (Документы, Рабочий стол, Загрузки, Изображения...).
+    if is_sensitive_user_path(p):
+        return True
 
     return False
 
@@ -373,6 +438,10 @@ def format_bytes(num) -> str:
     try:
         value = float(num or 0)
     except (TypeError, ValueError):
+        value = 0.0
+    # NaN и бесконечность в отчётах недопустимы: «nan ТБ» выглядит как сбой
+    # программы, а не как размер. Считаем их нулём.
+    if not math.isfinite(value):
         value = 0.0
     # Единицы зависят от языка интерфейса (Б/КБ/МБ или B/KB/MB).
     byte, kb, mb, gb, tb = i18n.units()
@@ -1501,9 +1570,24 @@ def clean_scan_result(result: dict, dry_run: bool = False, on_log=None,
     files = result.get("files", [])
     total = len(files)
     last_emit = 0.0
-    for index, (path, size) in enumerate(files, start=1):
+    for index, entry in enumerate(files, start=1):
         if stop_event is not None and stop_event.is_set():
             break
+        # Запись результата скана должна быть парой (путь, размер). Если она
+        # битая, это пропуск, а не повод упасть на середине очистки: часть
+        # файлов к этому моменту уже удалена, и падение оставило бы
+        # статистику недосчитанной.
+        try:
+            path, size = entry
+        except (TypeError, ValueError):
+            stats["skipped"] += 1
+            continue
+        # Отрицательный размер вычел бы байты из общего итога, а строка
+        # вместо числа уронила бы сложение. Считаем такое нулём.
+        try:
+            size = max(0, int(size))
+        except (TypeError, ValueError):
+            size = 0
         if on_progress:
             # Не чаще 20 раз в секунду. Раньше сигнал уходил на каждый файл,
             # и на категории в десятки тысяч файлов очередь сообщений росла
@@ -1795,7 +1879,7 @@ def _first_int(text: str):
 
 def _progress_from_line(line: str):
     """Доля выполнения (0..1) из строки прогресс-бара DISM, иначе None."""
-    stripped = line.strip()
+    stripped = (line or "").strip()
     if not stripped.startswith("["):
         return None
     match = _PROGRESS_RE.search(stripped)
@@ -2341,7 +2425,15 @@ def main(argv=None) -> int:
                 print("           Файлы кэша/истории/куки могут быть заняты и пропущены.")
 
     if not dry_run and not args.yes:
-        answer = input("Продолжить реальную очистку? [y/N]: ").strip().lower()
+        # Подтверждение читается из stdin, а его может не быть вовсе: служба,
+        # планировщик, `</dev/null`, оборванный пайп. Раньше input() в этом
+        # случае выбрасывал EOFError, и вместо «Отменено» пользователь получал
+        # трейсбек с кодом 1. Отмена — это код 4, как и обещано в справке.
+        try:
+            answer = input("Продолжить реальную очистку? [y/N]: ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print("\nОтменено пользователем.")
+            return EXIT_CANCELLED
         if answer not in ("y", "yes", "д", "да"):
             print("Отменено пользователем.")
             return EXIT_CANCELLED
