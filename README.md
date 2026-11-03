@@ -115,6 +115,8 @@ check you click — and every downloaded byte is verified before it runs.
 - [Limitations](#limitations)
 - [Feedback](#feedback)
 - [Disclaimer](#disclaimer)
+- [Code signing policy](#code-signing-policy)
+- [Privacy](#privacy)
 - [License](#license)
 
 ---
@@ -411,6 +413,31 @@ advisory form described in [SECURITY.md](SECURITY.md).
 Swept deletes files and changes Windows settings. It is built conservatively and tested, but you
 use it at your own risk — keep backups of anything you cannot re-download. The authors take no
 responsibility for data loss or system damage.
+
+## Code signing policy
+
+Free code signing provided by SignPath.io, certificate by SignPath Foundation.
+
+**Current state.** Releases up to and including 1.5.3 are signed with a self-signed certificate
+(`CN=vladcodex, O=vladcodex`). That does not remove SmartScreen's warning — Windows does not trust
+an unknown root, so the publisher is still reported as unknown. The project has applied to the
+SignPath Foundation. If the application is accepted, release binaries will be signed through
+SignPath.io with a certificate issued to SignPath Foundation, the publisher name will change to
+match, and this section will be updated to say so.
+
+**Roles.** Swept has a single maintainer.
+
+| Role | Member |
+|---|---|
+| Author and committer | [@vladcodex](https://github.com/vladcodex) |
+| Reviewer | [@vladcodex](https://github.com/vladcodex) — the project has one maintainer, so changes are authored and reviewed by the same person. There are no other committers. |
+| Approver of signing requests | [@vladcodex](https://github.com/vladcodex) — every release signing request is approved manually, per release |
+
+**What is signed.** Releases contain only binaries built from the source in this repository; no
+prebuilt or vendored executables are added. The release build is being moved into GitHub Actions
+so that the artifact handed to the signing service is produced by CI from a tagged commit.
+
+**Privacy.** What the program stores and where it connects is described in [PRIVACY.md](PRIVACY.md).
 
 ## Privacy
 
