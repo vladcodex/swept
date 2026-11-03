@@ -3700,9 +3700,16 @@ class CleanerApp(ctk.CTk):
                 entry = sys.argv[0] if sys.argv and sys.argv[0] else __file__
                 params = '"{}"'.format(os.path.abspath(entry))
             result = _shell_execute_runas(exe, params)
-            if result > 32:
-                # Новая копия запущена — эта закрывается.
+            if result > 32 and core.wait_for_other_instance(3.0):
+                # Повышенная копия действительно заняла мьютекс — можно
+                # закрываться. Одного кода возврата для этого мало.
                 self._on_close()
+            elif result > 32:
+                # Запрос ушёл, но новая копия так и не появилась. Закрываться
+                # в этом случае нельзя: окон не останется ни у кого.
+                if released:
+                    core.acquire_single_instance()
+                self._log(i18n.t("log.elevate_failed"))
             else:
                 # Пользователь отказался в UAC: работаем без прав, как раньше.
                 if released:

@@ -289,6 +289,42 @@ def release_single_instance() -> bool:
     return True
 
 
+def wait_for_other_instance(timeout: float = 3.0,
+                            name: str = SINGLE_INSTANCE_NAME) -> bool:
+    """
+    Ждёт, пока мьютекс займёт ДРУГОЙ процесс.
+
+    Нужен после ShellExecuteW с runas. Успешный код возврата означает только
+    «запрос ушёл», а не «копия работает»: повышенная копия может не стартовать
+    (политика, мгновенный выход, сбой распаковки). Раньше вызывающий код верил
+    коду возврата и сразу закрывал своё окно — и если новая копия не появлялась,
+    у пользователя не оставалось ни одного окна, только пустой рабочий стол.
+
+    True — мьютекс занят кем-то другим, закрываться безопасно.
+    False — за отведённое время никто его не взял.
+    """
+    if not IS_WINDOWS:
+        return False
+    deadline = time.monotonic() + max(0.0, timeout)
+    kernel32 = ctypes.windll.kernel32
+    kernel32.CreateMutexW.restype = ctypes.c_void_p
+    kernel32.CreateMutexW.argtypes = [ctypes.c_void_p, ctypes.c_int,
+                                      ctypes.c_wchar_p]
+    while True:
+        try:
+            handle = kernel32.CreateMutexW(None, 0, name)
+            if handle:
+                taken = kernel32.GetLastError() == ERROR_ALREADY_EXISTS
+                kernel32.CloseHandle(ctypes.c_void_p(handle))
+                if taken:
+                    return True
+        except Exception:
+            return False
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.1)
+
+
 def focus_window(titles) -> bool:
     """
     Поднимает на передний план окно с одним из указанных заголовков.

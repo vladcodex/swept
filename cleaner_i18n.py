@@ -530,6 +530,8 @@ STRINGS = {
         "log.admin_no_1": "[!] Нет прав администратора. Часть системных файлов "
                           "(Windows\\Temp, кэш обновлений) будет пропущена.",
         "log.admin_no_2": "    Для полной очистки запустите программу от имени администратора.",
+        "log.elevate_failed": "[!] Запрос на перезапуск с правами ушёл, но новая копия "
+                              "не появилась. Работаем в этом окне без прав.",
         "log.stop_requested": "[!] Запрошена остановка…",
         "log.scan_header": "========== СКАНИРОВАНИЕ ==========",
         "log.clean_header": "========== ОЧИСТКА ({}) ==========",
@@ -1121,6 +1123,9 @@ STRINGS = {
         "log.admin_no_1": "[!] No administrator rights. Some system files "
                           "(Windows\\Temp, update cache) will be skipped.",
         "log.admin_no_2": "    For a full cleanup run the program as administrator.",
+        "log.elevate_failed": "[!] The request to restart with rights was sent, but the "
+                              "new copy never appeared. Continuing in this window "
+                              "without them.",
         "log.stop_requested": "[!] Stop requested…",
         "log.scan_header": "========== SCANNING ==========",
         "log.clean_header": "========== CLEANUP ({}) ==========",
