@@ -412,6 +412,12 @@ Swept deletes files and changes Windows settings. It is built conservatively and
 use it at your own risk — keep backups of anything you cannot re-download. The authors take no
 responsibility for data loss or system damage.
 
+## Privacy
+
+Swept collects nothing and has no backend. [PRIVACY.md](PRIVACY.md) lists exactly what the program
+stores on your machine and the only two cases in which it touches the network — the update check
+you trigger and the vendor downloads you request.
+
 ## License
 
 [MIT](LICENSE) — free to use, modify and redistribute. The app itself is free, with no paid tier
