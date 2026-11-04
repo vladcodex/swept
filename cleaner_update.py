@@ -60,7 +60,7 @@ _VERSION_RE = re.compile(
 
 # Запасное значение: используется, если строку версии не удалось прочитать
 # из интерфейсных ресурсов. Должно совпадать с build.py (VERSION).
-FALLBACK_VERSION = (1, 5, 3)
+FALLBACK_VERSION = (1, 5, 4)
 
 
 def parse_version(text) -> tuple[int, ...]:
