@@ -81,3 +81,27 @@ class TestUsage:
         assert core.main(["--version"]) == core.EXIT_OK
         assert "Swept" in capsys.readouterr().out
         assert core.main(["--list"]) == core.EXIT_OK
+
+
+class TestWriteReport:
+    """Отчёт пишется в чужой путь: ошибка должна быть сообщением, не трейсбеком."""
+
+    def _report(self):
+        return core.build_report({}, mode="scan", dry_run=True)
+
+    def test_nul_in_path_returns_error(self, tmp_path):
+        ok, message = core.write_report(
+            str(tmp_path / "a\x00b.txt"), self._report())
+        assert ok is False
+        assert message
+
+    def test_missing_directory_returns_error(self, tmp_path):
+        ok, _ = core.write_report(
+            str(tmp_path / "nope" / "r.txt"), self._report())
+        assert ok is False
+
+    def test_html_by_extension(self, tmp_path):
+        target = tmp_path / "report.html"
+        ok, message = core.write_report(str(target), self._report())
+        assert ok is True and message == str(target)
+        assert "<html" in target.read_text(encoding="utf-8")

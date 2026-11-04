@@ -335,3 +335,11 @@ class TestCleanScanResultBadInput:
         assert stats["removed"] == 1
         assert stats["freed"] == 0
         assert not good.exists()
+
+    @pytest.mark.parametrize("bad", [None, [], "nope", 42])
+    def test_non_dict_result_returns_empty_stats(self, bad, allowed):
+        """Прерванное сканирование отдаёт None вместо словаря — очистка
+        должна вернуть нули, а не упасть на result.get()."""
+        stats = core.clean_scan_result(bad, allowed=allowed)
+        assert stats == {"removed": 0, "skipped": 0, "errors": 0, "freed": 0,
+                         "recycle_done": None}

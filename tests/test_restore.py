@@ -51,6 +51,13 @@ class TestParsePoints:
         points = restore.parse_points_json('{"seq": 2}')
         assert points == [{"seq": 2, "desc": "", "time": ""}]
 
+    def test_infinite_number_is_skipped(self):
+        """JSON допускает 1e999 — это float('inf'), и int(inf) бросает
+        OverflowError. Битое поле не должно ронять весь разбор."""
+        assert restore.parse_points_json('{"seq": 1e999}') == []
+        assert restore.parse_points_json('[{"seq": 1e999}, {"seq": 3}]') == [
+            {"seq": 3, "desc": "", "time": ""}]
+
 
 # --------------------------------------------------------------------------
 # Проверка номера точки
@@ -60,6 +67,9 @@ class TestSequenceValidation:
         (1, True), ("12", True), (999999, True),
         (0, False), (-3, False), ("", False), (None, False),
         ("1; calc", False), ("1 OR 1=1", False), (10 ** 7, False),
+        # Дробное не округляется до точки 1, булево — не номер,
+        # строка "1.5" не превращается в 1.
+        (1.5, False), (2.0, True), (True, False), ("1.5", False),
     ])
     def test_valid_sequence(self, value, expected):
         assert restore.valid_sequence(value) is expected

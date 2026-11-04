@@ -168,7 +168,10 @@ def parse_points_json(text: str) -> list:
             continue
         try:
             seq = int(item.get("seq") or 0)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
+            # OverflowError — JSON вида {"seq": 1e999} даёт float('inf'),
+            # а int(inf) падает именно так. Битый ответ не должен ронять
+            # разбор списка точек.
             continue
         if seq <= 0:
             continue
@@ -228,10 +231,27 @@ def create_restore_point(desc: str = "Swept") -> tuple:
 # ---------------------------------------------------------------------------
 
 def valid_sequence(seq) -> bool:
-    """True, если номер точки — положительное целое (защита от подстановки)."""
+    """True, если номер точки — положительное целое (защита от подстановки).
+
+    Дробное значение не округляется, а отвергается: int(1.5) молча дал бы
+    точку 1, то есть восстановление не по тому снимку. Булево значение тоже
+    не номер (int(True) == 1). Строка принимается только как запись целого
+    числа — "1.5" и "1 OR 1=1" не проходят.
+    """
+    if isinstance(seq, bool):
+        return False
+    if isinstance(seq, float):
+        if not seq.is_integer():
+            return False
+        seq = int(seq)
+    if isinstance(seq, str):
+        text = seq.strip()
+        if not text.isdigit():
+            return False
+        seq = int(text)
     try:
         return 0 < int(seq) < 1000000
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return False
 
 

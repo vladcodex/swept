@@ -1561,6 +1561,12 @@ def clean_scan_result(result: dict, dry_run: bool = False, on_log=None,
         {"removed": int, "skipped": int, "errors": int, "freed": int,
          "recycle_done": None | "ok" | "fail" | "simulated"}
     """
+    # Прерванное или неудавшееся сканирование даёт None вместо словаря.
+    # Такой вызов должен вернуть пустую статистику, а не уронить очистку
+    # на середине: файлов для удаления всё равно нет.
+    if not isinstance(result, dict):
+        return {"removed": 0, "skipped": 0, "errors": 0, "freed": 0,
+                "recycle_done": None}
     key = result.get("key")
     if allowed is None:
         allowed = build_allowed(key, result.get("selected"))
@@ -1879,7 +1885,12 @@ def _first_int(text: str):
 
 def _progress_from_line(line: str):
     """Доля выполнения (0..1) из строки прогресс-бара DISM, иначе None."""
-    stripped = (line or "").strip()
+    # Не строка — нечего разбирать. Раньше вызов с числом или None падал
+    # на .strip(): строки сюда приходят из stdout дочернего процесса, но
+    # функцию дергают и вручную из отладочных скриптов.
+    if not isinstance(line, str):
+        return None
+    stripped = line.strip()
     if not stripped.startswith("["):
         return None
     match = _PROGRESS_RE.search(stripped)
@@ -2348,7 +2359,9 @@ def write_report(path: str, report: dict) -> tuple:
         with open(path, "w", encoding="utf-8") as handle:
             handle.write(text)
         return True, path
-    except OSError as exc:
+    except (OSError, ValueError) as exc:
+        # ValueError — путь с NUL внутри: open() отвергает его ещё до Win32,
+        # и без перехвата наружу улетал бы traceback вместо сообщения.
         return False, str(exc)
 
 

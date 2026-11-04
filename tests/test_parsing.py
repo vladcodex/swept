@@ -101,6 +101,12 @@ class TestProgressFromLineEdges:
         assert core._progress_from_line("[") is None
         assert core._progress_from_line("[]") is None
 
+    def test_non_string_types(self):
+        """Число или байты вместо строки тоже не повод падать."""
+        assert core._progress_from_line(123) is None
+        assert core._progress_from_line(b"[50%]") is None
+        assert core._progress_from_line(0) is None
+
 
 class TestFormatBytesNonFinite:
     def test_nan_is_zero(self):
