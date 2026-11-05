@@ -87,4 +87,7 @@ Name: "{autodesktop}\{#MyAppName}";                  Filename: "{app}\{#MyAppExe
 
 [Run]
 ; Offer to launch the application right after installation.
-Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#MyAppName}}"; Flags: nowait postinstall skipifsilent
+; shellexec is required: Swept.exe carries a requireAdministrator manifest, and
+; a plain CreateProcess from Setup fails with error 740 (elevation required)
+; when Setup's own token is not elevated. ShellExecuteEx respects the manifest.
+Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#MyAppName}}"; Flags: nowait postinstall skipifsilent shellexec
