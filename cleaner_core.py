@@ -202,6 +202,23 @@ PROTECTED_FILES = {
 }
 
 
+# Пространства имён Win32: "\\?\" (extended-length), "\\.\" (device) и
+# "\??\" (NT-форма). В таких путях Win32 не канонизирует ".." и не отбрасывает
+# хвостовые точки, поэтому строковые проверки префиксов перестают совпадать
+# с обычными путями, хотя файловая система открывает тот же самый объект:
+# "\\?\C:\Windows\win.ini" — это C:\Windows\win.ini, мимо всех проверок вида
+# "p.startswith(защищённый_корень)". Своих путей программа так не строит,
+# поэтому такой ввод отвергается целиком.
+_DEVICE_PREFIXES = ("\\\\?\\", "\\\\.\\", "\\??\\")
+
+
+def has_device_prefix(path) -> bool:
+    """True, если путь задан через пространство имён устройств Win32."""
+    if not isinstance(path, str):
+        return False
+    return path.startswith(_DEVICE_PREFIXES)
+
+
 def _norm(path: str) -> str:
     """Нормализует путь: абсолютный, нижний регистр, без хвостового слэша."""
     if not path:
@@ -229,34 +246,43 @@ def is_protected(path: str) -> bool:
     """
     p = _norm(path)
 
-    # 1) Исключения проверяем первыми — они "перебивают" запрет.
-    for exc in _protected_exceptions():
-        if p == exc or p.startswith(exc + os.sep):
-            return False
+    # 1) Пространство имён устройств — не путь, а обход канонизации (см.
+    #    has_device_prefix). Отказ, а не попытка его разобрать.
+    if has_device_prefix(path) or has_device_prefix(p):
+        return True
 
-    # 2) Критические файлы по имени.
+    # 2) Критические файлы по имени — ДО исключений. Раньше исключения
+    #    проверялись первыми и возвращали False, из-за чего файл вида
+    #    C:\Windows\Temp\pagefile.sys считался незащищённым: подпапка, которую
+    #    разрешено чистить, отменяла запрет на сам файл. Запрет на имя должен
+    #    быть безусловным.
     name = os.path.basename(p)
     if name in PROTECTED_FILES:
         return True
 
-    # 3) Служебные каталоги на любом диске ($Recycle.Bin, System Volume Information).
+    # 3) Исключения — подпапки внутри защищённых зон, которые чистить можно.
+    for exc in _protected_exceptions():
+        if p == exc or p.startswith(exc + os.sep):
+            return False
+
+    # 4) Служебные каталоги на любом диске ($Recycle.Bin, System Volume Information).
     parts = [part for part in p.split(os.sep) if part]
     if any(part in PROTECTED_DIR_NAMES for part in parts):
         return True
 
-    # 4) Запрещённые каталоги (Windows, Program Files, ProgramData...).
+    # 5) Запрещённые каталоги (Windows, Program Files, ProgramData...).
     for pr in _protected_paths():
         if p == pr or p.startswith(pr + os.sep):
             return True
 
-    # 5) Файлы, лежащие НЕПОСРЕДСТВЕННО в системном корне. Сами корни в
+    # 6) Файлы, лежащие НЕПОСРЕДСТВЕННО в системном корне. Сами корни в
     #    _protected_paths не перечислены (иначе запрет накрыл бы и чистку
     #    C:\Windows\Temp), поэтому C:\Windows\win.ini прикрывался только
     #    белым списком. Теперь запрещён и здесь.
     if os.path.dirname(p) in _protected_roots_exact():
         return True
 
-    # 6) Личные папки (Документы, Рабочий стол, Загрузки, Изображения...).
+    # 7) Личные папки (Документы, Рабочий стол, Загрузки, Изображения...).
     if is_sensitive_user_path(p):
         return True
 
@@ -526,6 +552,10 @@ def is_sane_root(path: str) -> bool:
     """
     if not path or not os.path.isabs(path):
         return False
+    # "\\?\C:\Temp\Sub" — тот же каталог, но ни одно сравнение с ним не
+    # сойдётся: ни чёрный список, ни белый. Такой корень не берём.
+    if has_device_prefix(path):
+        return False
     p = _norm(path)
     _drive, tail = os.path.splitdrive(p)
     parts = [part for part in tail.split(os.sep) if part]
@@ -704,8 +734,14 @@ BROWSER_SUBOPTIONS = {
              {"type": "file", "name": "cookies.sqlite-wal", "root": "roam"},
              {"type": "file", "name": "cookies.sqlite-shm", "root": "roam"},
          ]},
-        {"key": "history", "title": "История посещений и загрузок",
-         "title_en": "Browsing & download history",
+        # places.sqlite — ОБЩАЯ база истории и закладок Firefox: отдельного
+        # файла только для истории не существует. Удаление этой базы уносит и
+        # закладки (Firefox восстановит лишь последнюю резервную копию, то
+        # есть всё добавленное после неё пропадёт). Поэтому пункт назван
+        # прямо и помечен caution — раньше он выглядел как обычная «история».
+        {"key": "history", "title": "История Firefox (удалит и закладки)",
+         "title_en": "Firefox history (bookmarks are deleted too)",
+         "caution": True,
          "targets": [
              {"type": "file", "name": "places.sqlite", "root": "roam"},
              {"type": "file", "name": "places.sqlite-wal", "root": "roam"},
@@ -1516,12 +1552,17 @@ def safe_delete_file(path: str, allowed: AllowedPaths, dry_run: bool = False) ->
     # 0) Мусор на входе — сразу отказ, до любых преобразований пути.
     #    Пустая строка превратилась бы в текущий каталог (abspath("") == cwd),
     #    а NUL внутри пути обрезал бы его уже в Win32 API: и то и другое
-    #    увело бы удаление туда, чего в белом списке нет.
-    if not isinstance(path, str) or not path or "\x00" in path:
+    #    увело бы удаление туда, чего в белом списке нет. Путь через
+    #    пространство имён устройств ("\\?\...") отвергается по той же
+    #    причине — он обходит канонизацию, на которой держатся проверки.
+    if (not isinstance(path, str) or not path or "\x00" in path
+            or has_device_prefix(path)):
         return "blocked"
     try:
         abspath = os.path.abspath(path)
     except (OSError, ValueError):
+        return "blocked"
+    if has_device_prefix(abspath):
         return "blocked"
 
     # 1) Чёрный список — не трогаем.

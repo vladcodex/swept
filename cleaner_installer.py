@@ -1188,6 +1188,86 @@ def _powershell_signature(path: str) -> dict:
         raise SignatureError(f"Некорректный ответ проверки подписи: {exc}") from exc
 
 
+# Поля Subject, в которых вообще может стоять издатель. Раньше строка из
+# каталога искалась подстрокой во всём Subject целиком, поэтому совпадение
+# находилось и в постороннем поле (L=, OU=, ST=), и внутри другого слова:
+# "Microsoft" проходило на "CN=NotMicrosoft Corp". Теперь сравниваются
+# только эти поля и только по словам.
+_PUBLISHER_RDN_KEYS = ("CN", "O", "OU")
+
+
+def _split_subject_rdns(subject: str) -> list:
+    """
+    Разбирает Subject сертификата на пары (ключ, значение).
+
+    Запятая — разделитель, но внутри значения она экранируется обратной
+    косой чертой ("CN=ACME\\, Inc."), а само значение может быть в кавычках.
+    Поэтому строку режем вручную, а не str.split(",").
+    """
+    parts, buf = [], []
+    text = str(subject or "")
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if char == "\\" and index + 1 < len(text):
+            buf.append(text[index + 1])
+            index += 2
+            continue
+        if char == ",":
+            parts.append("".join(buf))
+            buf = []
+            index += 1
+            continue
+        buf.append(char)
+        index += 1
+    if buf:
+        parts.append("".join(buf))
+
+    result = []
+    for part in parts:
+        key, sep, value = part.partition("=")
+        if not sep:
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] == '"':
+            value = value[1:-1]
+        result.append((key.strip().upper(), value.strip()))
+    return result
+
+
+def _words(text: str) -> list:
+    """Слова строки: 'Microsoft Corporation' -> ['microsoft', 'corporation']."""
+    return re.findall(r"[^\W_]+", str(text or "").lower(), re.UNICODE)
+
+
+def publisher_matches(subject: str, publisher: str) -> bool:
+    """
+    Совпадает ли ожидаемый издатель с одним из полей Subject.
+
+    Издатель в каталоге записан коротко ("Microsoft", "Valve", "GOG"), а в
+    сертификате стоит полное название ("Microsoft Corporation", "Valve
+    Corp."), поэтому сравнивать приходится по началу значения. Но по словам,
+    а не по символам: последовательность слов издателя должна целиком
+    совпасть с последовательностью слов поля. Тогда "Microsoft" находится в
+    "Microsoft Corporation" и не находится ни в "NotMicrosoft Corp"
+    (совпадение внутри слова), ни в "L=Microsoft" (постороннее поле).
+    Сузить сильнее нельзя, пока в каталоге стоят короткие имена: подпись
+    "Microsoft Reseller Ltd" совпадёт по первому слову.
+    """
+    wanted = _words(publisher)
+    if not wanted:
+        return False
+    size = len(wanted)
+    for key, value in _split_subject_rdns(subject):
+        if key not in _PUBLISHER_RDN_KEYS:
+            continue
+        words = _words(value)
+        for start in range(len(words) - size + 1):
+            if words[start:start + size] == wanted:
+                return True
+    return False
+
+
 def _verify_signature(path: str, entry: dict) -> dict:
     """
     Проверяет подпись и издателя. При провале поднимает SignatureError.
@@ -1218,7 +1298,7 @@ def _verify_signature(path: str, entry: dict) -> dict:
     publishers = entry.get("publishers") or ()
     if not publishers:
         raise SignatureError("в каталоге не задан ожидаемый издатель")
-    if not any(re.search(re.escape(p), subject, re.IGNORECASE) for p in publishers):
+    if not any(publisher_matches(subject, p) for p in publishers):
         raise SignatureError(f"издатель не совпал (получено: {subject})")
     return info
 
